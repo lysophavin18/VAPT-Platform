@@ -1,3 +1,0 @@
-"""
-VAPT Platform - Scanner Modules
-"""

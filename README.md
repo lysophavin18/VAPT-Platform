@@ -1,263 +1,115 @@
-# VAPT Platform
+# NoovaStack VAPT Repository
 
-A comprehensive Vulnerability Assessment and Penetration Testing (VAPT) platform with Docker orchestration, modern web interface, and integration with industry-standard security tools.
+This repository contains the NoovaStack VAPT platform. The active application lives in `noovastack-vapt/`.
 
-## 🚀 Features
+The old root-level VAPT stack has been removed. Do not use root-level `backend/`, `frontend/`, `database/`, `tools/`, or root Docker Compose files for the current platform.
 
-- **Web Dashboard**: Modern React-based interface with real-time scan monitoring
-- **Project Management**: Organize assessments by projects with targets and scans
-- **Multi-Tool Integration**: Nmap, Nikto, Nuclei, OWASP ZAP, SQLMap, Gobuster, Katana, WPScan, Hydra, Metasploit
-- **Vulnerability Tracking**: Centralized vulnerability management with severity classification
-- **Report Generation**: PDF, HTML, DOCX, and JSON report formats
-- **Task Queue**: Celery-based background job processing for long-running scans
-- **User Management**: Role-based access control (Admin, Analyst, Viewer)
-- **Scheduled Scans**: Cron-based automated scanning capabilities
-
-## 📋 Prerequisites
-
-- Docker Engine 24.0+
-- Docker Compose 2.0+
-- 8GB RAM minimum (16GB recommended)
-- 50GB disk space
-
-## 🛠️ Quick Start
-
-### 1. Clone and Configure
+## Run The Platform
 
 ```bash
-# Navigate to VAPT-Platform directory
-cd VAPT-Platform
-
-# Copy environment file
+cd noovastack-vapt
 cp .env.example .env
-
-# Edit .env file with your settings
-nano .env
+docker compose up -d --build
 ```
 
-### 2. Build and Start
+Check services:
 
 ```bash
-# Build all containers
-docker-compose build
-
-# Start the platform
-docker-compose up -d
-
-# Check service status
-docker-compose ps
+docker compose ps
 ```
 
-### 3. Access the Platform
+Stop services:
 
-| Service | URL | Description |
-|---------|-----|-------------|
-| Web Interface | http://localhost | Main dashboard |
-| API Documentation | http://localhost/api/docs | Swagger UI |
-| Flower (Task Monitor) | http://localhost/flower | Celery monitoring |
-
-### Default Credentials
-
-- **Email**: admin@vapt.local
-- **Password**: AdminSecure2024!
-
-⚠️ **Change these immediately in production!**
-
-## 🏗️ Architecture
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                       NGINX (Reverse Proxy)                 │
-│                         Port 80/443                         │
-└─────────────────┬───────────────────────┬───────────────────┘
-                  │                       │
-    ┌─────────────▼─────────────┐   ┌─────▼─────────────────┐
-    │     React Frontend        │   │    FastAPI Backend    │
-    │      (Port 3000)          │   │      (Port 8000)      │
-    └───────────────────────────┘   └──────────┬────────────┘
-                                               │
-                    ┌──────────────────────────┼──────────────────────────┐
-                    │                          │                          │
-          ┌─────────▼─────────┐    ┌───────────▼───────────┐   ┌─────────▼─────────┐
-          │    PostgreSQL     │    │        Redis          │   │   Celery Workers  │
-          │    (Port 5432)    │    │     (Port 6379)       │   │   + Beat + Flower │
-          └───────────────────┘    └───────────────────────┘   └─────────┬─────────┘
-                                                                         │
-                    ┌────────────────────────────────────────────────────┘
-                    │
-    ┌───────────────┼───────────────┬───────────────┬───────────────┐
-    │               │               │               │               │
-┌───▼───┐       ┌───▼───┐       ┌───▼───┐       ┌───▼───┐       ┌───▼───┐
-│ Nmap  │       │ Nikto │       │Nuclei │       │  ZAP  │       │SQLMap │
-└───────┘       └───────┘       └───────┘       └───────┘       └───────┘
+```bash
+docker compose down
 ```
 
-## 📁 Project Structure
+## Access Points
 
-```
+| Service | URL |
+| --- | --- |
+| Frontend | `http://localhost:3000` |
+| Backend API | `http://localhost:8002` |
+| API Docs | `http://localhost:8002/api/docs` |
+| NGINX Proxy | `http://localhost:8082` |
+| PostgreSQL | `localhost:5434` |
+| Redis | `localhost:6381` |
+
+Default local login:
+
+| Field | Value |
+| --- | --- |
+| Email | `admin@noovastack.local` |
+| Password | `AdminSecure2024!` |
+
+Change default credentials before any non-local deployment.
+
+## Repository Layout
+
+```text
 VAPT-Platform/
-├── docker-compose.yml          # Main orchestration file
-├── .env.example                 # Environment template
-├── backend/
-│   ├── Dockerfile
-│   ├── main.py                  # FastAPI application
-│   ├── config.py                # Configuration settings
-│   ├── database.py              # Database connection
-│   ├── models.py                # SQLAlchemy models
-│   ├── schemas.py               # Pydantic schemas
-│   ├── report_generator.py      # Report generation module
-│   ├── routers/
-│   │   ├── auth.py              # Authentication endpoints
-│   │   ├── users.py             # User management
-│   │   ├── projects.py          # Project CRUD
-│   │   ├── targets.py           # Target management
-│   │   ├── scans.py             # Scan operations
-│   │   ├── vulnerabilities.py   # Vulnerability management
-│   │   ├── reports.py           # Report generation
-│   │   └── dashboard.py         # Dashboard statistics
-│   └── orchestrator/
-│       └── celery_app.py        # Celery tasks for scans
-├── frontend/
-│   ├── Dockerfile
-│   ├── package.json
-│   ├── src/
-│   │   ├── App.tsx              # Main React app
-│   │   ├── api/client.ts        # API client
-│   │   ├── store/authStore.ts   # Auth state management
-│   │   ├── components/
-│   │   │   └── Layout.tsx       # Main layout
-│   │   └── pages/
-│   │       ├── Login.tsx
-│   │       ├── Dashboard.tsx
-│   │       ├── Projects.tsx
-│   │       ├── Scans.tsx
-│   │       ├── Vulnerabilities.tsx
-│   │       ├── Reports.tsx
-│   │       └── Settings.tsx
-│   └── tailwind.config.js
-├── nginx/
-│   └── nginx.conf               # Reverse proxy config
-├── database/
-│   └── init.sql                 # Database initialization
-├── tools/
-│   ├── sqlmap/Dockerfile
-│   ├── nikto/Dockerfile
-│   ├── gobuster/Dockerfile
-│   └── hydra/Dockerfile
-└── wordlists/
-    ├── common.txt
-    ├── users.txt
-    └── passwords.txt
+├── README.md                         Root repository entry point
+├── .gitignore                        Ignore rules for secrets, builds, reports, caches
+└── noovastack-vapt/                  Active NoovaStack VAPT platform
+    ├── README.md                     Full platform documentation
+    ├── ARCHITECTURE.md               Architecture and design notes
+    ├── docker-compose.yml            Local service orchestration
+    ├── .env.example                  App environment template
+    ├── backend/                      FastAPI API, database, workers, reports, safety logic
+    ├── frontend/                     Next.js UI
+    ├── configs/                      NGINX configuration
+    ├── sample-reports/               Example report outputs
+    ├── tests/                        Backend test entry points
+    └── workflows/local-ai-agent-program/
+        ├── prompts/                  Agent system prompts
+        ├── schemas/                  Structured output schemas
+        ├── datasets/                 Training/evaluation examples
+        ├── evals/                    Evaluation cases and plan
+        ├── rag/                      RAG collection configuration
+        ├── registry/                 Model registry template
+        ├── agents.yaml               Agent registry
+        ├── skill_routing.yaml        Tool and skill routing policy
+        └── tool_catalog.yaml         Controlled tool catalog
 ```
 
-## 🔧 Configuration
+## What The Platform Does
 
-### Environment Variables
+NoovaStack VAPT is an AI-assisted vulnerability assessment and penetration testing platform for authorized security testing.
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `POSTGRES_PASSWORD` | VAPTSecure2024! | Database password |
-| `SECRET_KEY` | (generated) | JWT signing key |
-| `MAX_CONCURRENT_SCANS` | 5 | Max parallel scans |
-| `SCAN_TIMEOUT_SECONDS` | 3600 | Default scan timeout |
+Core capabilities:
 
-### Scan Types
+- Project, engagement, asset, scan, finding, evidence, report, and audit-log management.
+- Safety-controlled scan orchestration through FastAPI and Celery workers.
+- Professional report generation in multiple formats.
+- Local AI assistant integration through an OpenAI-compatible local model endpoint.
+- Controlled AI tool-request workflow where the backend validates scope, authorization, module allowlists, risk, and approval requirements before execution.
 
-| Type | Description | Tools Used |
-|------|-------------|------------|
-| `port_scan` | Port and service discovery | Nmap |
-| `web_scan` | Web vulnerability scanning | Nikto, Nuclei |
-| `sql_injection` | SQL injection testing | SQLMap |
-| `directory_enum` | Directory enumeration | Gobuster |
-| `crawl` | Web crawling | Katana |
-| `wordpress` | WordPress security scan | WPScan |
-| `brute_force` | Credential testing | Hydra |
-| `full_scan` | Comprehensive assessment | All tools |
+## Important Safety Notes
 
-## 📊 API Endpoints
+- Only scan systems you own or are explicitly authorized to test.
+- The AI assistant should plan and request tasks; it must not bypass backend safety controls or execute raw shell commands directly.
+- Keep `.env` files, generated reports, caches, `.next/`, `node_modules/`, and `__pycache__/` out of Git.
 
-### Authentication
-- `POST /api/auth/login` - User login
-- `POST /api/auth/register` - User registration
-- `POST /api/auth/refresh` - Refresh token
+## Development Workflow
 
-### Projects
-- `GET /api/projects` - List projects
-- `POST /api/projects` - Create project
-- `GET /api/projects/{id}` - Get project details
-- `PUT /api/projects/{id}` - Update project
-- `DELETE /api/projects/{id}` - Delete project
-
-### Scans
-- `POST /api/scans` - Create and start scan
-- `GET /api/scans/{id}` - Get scan status
-- `POST /api/scans/{id}/stop` - Stop running scan
-- `GET /api/scans/{id}/results` - Get scan results
-
-### Vulnerabilities
-- `GET /api/vulnerabilities` - List vulnerabilities
-- `POST /api/vulnerabilities/{id}/verify` - Verify vulnerability
-- `POST /api/vulnerabilities/{id}/false-positive` - Mark as false positive
-
-### Reports
-- `POST /api/reports/generate` - Generate report
-- `GET /api/reports/{id}/download` - Download report
-
-## 🔒 Security Considerations
-
-1. **Change Default Credentials**: Update admin password immediately
-2. **Use HTTPS**: Configure SSL certificates for production
-3. **Network Isolation**: Run scans from isolated network
-4. **Access Control**: Implement proper RBAC
-5. **Audit Logging**: All actions are logged
-6. **Rate Limiting**: API rate limiting enabled
-
-## 🐳 Docker Commands
+Use the repository root for Git:
 
 ```bash
-# Start all services
-docker-compose up -d
-
-# View logs
-docker-compose logs -f
-
-# Stop services
-docker-compose down
-
-# Rebuild specific service
-docker-compose build backend
-
-# Scale workers
-docker-compose up -d --scale celery-worker=3
-
-# Access database
-docker-compose exec postgres psql -U vapt_user -d vapt_platform
+git status
+git add <paths>
+git commit -m "message"
+git push origin main
 ```
 
-## 🧪 Development
-
-### Backend Development
+Use `noovastack-vapt/` for app commands:
 
 ```bash
-cd backend
-python -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload
+cd noovastack-vapt
+docker compose up -d --build
 ```
 
-### Frontend Development
+## More Documentation
 
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-## 📝 License
-
-This project is for authorized security testing only. Ensure you have proper authorization before scanning any targets.
-
-## ⚠️ Disclaimer
-
-This tool is intended for authorized security testing and educational purposes only. Unauthorized access to computer systems is illegal. Always obtain proper authorization before conducting security assessments.
+- `noovastack-vapt/README.md`
+- `noovastack-vapt/ARCHITECTURE.md`
+- `noovastack-vapt/workflows/local-ai-agent-program/README.md`
