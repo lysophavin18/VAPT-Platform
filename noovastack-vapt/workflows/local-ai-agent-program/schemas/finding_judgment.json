@@ -1,0 +1,18 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NoovaStack Finding Judgment",
+  "type": "object",
+  "required": ["recommendation", "evidence_ids", "missing_information", "human_review_required"],
+  "properties": {
+    "recommendation": { "type": "string", "enum": ["VERIFIED", "FLAGGED", "REJECTED"] },
+    "suggested_severity": { "type": "string", "enum": ["info", "low", "medium", "high", "critical"] },
+    "cwe": { "type": "string" },
+    "owasp_category": { "type": "string" },
+    "evidence_ids": { "type": "array", "items": { "type": "string" } },
+    "missing_information": { "type": "array", "items": { "type": "string" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "rationale": { "type": "string", "description": "Concise evidence-grounded decision rationale, not chain-of-thought." },
+    "human_review_required": { "type": "boolean", "const": true }
+  },
+  "additionalProperties": false
+}

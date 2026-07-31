@@ -1,0 +1,26 @@
+model:
+  name: noovastack-pentester-agent
+  version: 0.1.0
+  base_model: qwen3-coder:30b-64k
+  provider: ollama
+  base_url: http://192.168.220.204:11434/v1
+  dataset_version: vapt-agent-data-2026-01
+  training_method: prompt_rag_tools_eval_baseline
+  adapter_version: none
+  prompt_version: 1
+  policy_version: 1
+  training_date: null
+  training_hardware: null
+  evaluation_results: null
+  known_limitations:
+    - Base model only; no LoRA adapter has been promoted.
+    - Human review remains required for findings, reports, and retests.
+  approved_by: null
+  deployment_status: baseline
+  model_hash: null
+
+release_tags:
+  - noovastack-pentester-agent:0.1.0
+  - noovastack-pentester-agent:evaluation
+
+do_not_overwrite_production_model: true

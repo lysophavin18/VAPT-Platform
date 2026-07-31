@@ -13,7 +13,7 @@ services:
       - postgres_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - vapt-network
     healthcheck:
@@ -31,7 +31,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "6380:6379"
     networks:
       - vapt-network
     healthcheck:
@@ -60,7 +60,7 @@ services:
       - scan_results:/app/results
       - ./tools:/tools
     ports:
-      - "8000:8000"
+      - "8001:8000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -186,7 +186,7 @@ services:
       - zap_data:/zap/wrk
       - scan_results:/results
     ports:
-      - "8080:8080"
+      - "8081:8080"
     networks:
       - vapt-network
     restart: unless-stopped
@@ -306,4 +306,4 @@ networks:
     driver: bridge
     ipam:
       config:
-        - subnet: 172.28.0.0/16
+        - subnet: 172.29.0.0/16

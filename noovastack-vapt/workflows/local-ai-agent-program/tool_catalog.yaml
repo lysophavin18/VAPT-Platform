@@ -1,0 +1,72 @@
+tools:
+  curl_http_capture:
+    display_name: curl
+    category: web
+    risk_level: low
+    safe_default: true
+    purpose: Safe HTTP request and response metadata capture for approved targets.
+    allowed_methods: [GET, HEAD, OPTIONS]
+    blocked_options: [upload_file, execute_local_file, shell_pipe, credential_exfiltration, arbitrary_headers_with_secrets]
+    evidence_outputs: [status_code, response_headers, redirect_chain, tls_metadata, body_hash, redacted_excerpt]
+
+  subfinder_passive:
+    display_name: Subfinder
+    category: recon
+    risk_level: low
+    safe_default: true
+    purpose: Passive subdomain discovery for approved root domains.
+    required_scope: approved_root_domain
+    blocked_options: [active_bruteforce, out_of_scope_domains]
+    evidence_outputs: [subdomain, source, resolved_status]
+
+  gobuster_discovery:
+    display_name: Gobuster
+    category: web
+    risk_level: medium
+    safe_default: false
+    purpose: Controlled directory, file, DNS, or vhost discovery against approved targets.
+    required_scope: approved_target
+    required_approval: scan_profile_or_human_approval
+    rate_limits:
+      requests_per_second_max: 3
+      concurrency_max: 5
+    allowed_modes: [dir, dns, vhost]
+    blocked_options: [aggressive_rate, recursive_unbounded, destructive_payloads, credential_guessing]
+    evidence_outputs: [path_or_host, status_code, content_length, redirect_location, redacted_excerpt]
+
+  whatweb_fingerprint:
+    display_name: WhatWeb
+    category: web
+    risk_level: low
+    safe_default: true
+    purpose: Technology and framework fingerprinting for approved web targets.
+    blocked_options: [aggressive_plugins, unsafe_request_headers]
+    evidence_outputs: [detected_technology, version, confidence, source_response]
+
+  sslscan:
+    display_name: SSLScan
+    category: tls
+    risk_level: low
+    safe_default: true
+    purpose: TLS protocol, certificate, and cipher configuration review.
+    required_scope: approved_host
+    blocked_options: [stress_testing, repeated_handshake_flood]
+    evidence_outputs: [protocols, ciphers, certificate_chain, expiry, weak_configuration]
+
+  testssl_scan:
+    display_name: testssl.sh
+    category: tls
+    risk_level: low
+    safe_default: true
+    purpose: TLS protocol and cipher checks for approved hosts.
+    required_scope: approved_host
+    blocked_options: [parallel_stress_mode, starttls_guessing_outside_scope]
+    evidence_outputs: [protocols, ciphers, vulnerabilities, certificate_metadata]
+
+execution_rules:
+  model_direct_execution: forbidden
+  shell_pipelines_from_model: forbidden
+  backend_worker_execution_required: true
+  scope_validation_required: true
+  audit_log_required: true
+  evidence_redaction_required: true

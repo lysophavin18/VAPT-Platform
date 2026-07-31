@@ -1,0 +1,110 @@
+model:
+  provider: ollama
+  base_url: http://192.168.220.204:11434/v1
+  model: qwen3-coder:30b-64k
+  context_window: 64K
+  temperature: 0.2
+  max_output_tokens: 4096
+
+routing:
+  skill_routing_catalog: skill_routing.yaml
+  use_before_tool_selection: true
+  require_authorization_scope_window_before_execution: true
+  fallback_when_uncertain: request_missing_information
+
+agents:
+  engagement_planner:
+    model: qwen3-coder:30b-64k
+    prompt: prompts/engagement_planner.md
+    tools: [get_project, get_engagement, get_scope, get_rules_of_engagement]
+    output_schema: schemas/assessment_plan.json
+    rag_collections: [company_security_standards, project_documents, engagement_documents]
+
+  finding_judge:
+    model: qwen3-coder:30b-64k
+    prompt: prompts/finding_judge.md
+    tools: [get_finding, get_evidence, search_related_findings]
+    output_schema: schemas/finding_judgment.json
+    rag_collections: [verified_findings, global_security_references, approved_remediation]
+
+  remediation_advisor:
+    model: qwen3-coder:30b-64k
+    prompt: prompts/remediation_advisor.md
+    tools: [get_finding, get_evidence, get_approved_remediation, search_security_references]
+    output_schema: schemas/remediation_advice.json
+    rag_collections: [approved_remediation, company_security_standards, global_security_references]
+
+  report_writer:
+    model: qwen3-coder:30b-64k
+    prompt: prompts/report_writer.md
+    tools: [get_verified_findings, get_scope, get_report_template]
+    output_schema: schemas/report_draft.json
+    rag_collections: [report_templates, verified_findings, company_security_standards]
+
+  retest_analyst:
+    model: qwen3-coder:30b-64k
+    prompt: prompts/retest_analyst.md
+    tools: [get_finding, get_original_evidence, get_retest_evidence]
+    output_schema: schemas/retest_review.json
+    rag_collections: [verified_findings, approved_remediation]
+
+  pentest_agent:
+    model: qwen3-coder:30b-64k
+    prompt: prompts/pentest_agent.md
+    tools:
+      - get_project
+      - get_engagement
+      - get_scope
+      - get_rules_of_engagement
+      - create_scan_task
+      - get_scan_profile
+      - get_scan_results
+      - create_candidate_finding
+      - request_curl_http_capture
+      - request_subfinder_passive
+      - request_gobuster_discovery
+      - request_whatweb_fingerprint
+      - request_sslscan
+      - request_testssl_scan
+    output_schema: schemas/scan_task_request.json
+    tool_catalog: tool_catalog.yaml
+    skill_routing: skill_routing.yaml
+    rag_collections: [company_security_standards, project_documents, engagement_documents, global_security_references, external_security_skills]
+    execution_boundary: platform_worker_layer_only
+
+  internal_autonomous_assessment_agent:
+    model: qwen3-coder:30b-64k
+    prompt: prompts/internal_autonomous_assessment_agent.md
+    tools:
+      - get_project
+      - create_project
+      - get_engagement
+      - create_engagement
+      - get_scope
+      - get_rules_of_engagement
+      - get_testing_window
+      - create_asset
+      - approve_asset_request
+      - create_scan_task
+      - validate_scan_task
+      - launch_scan_task
+      - get_scan_progress
+      - get_scan_results
+      - get_evidence
+      - create_candidate_finding
+      - draft_report
+      - request_human_approval
+    output_schema: schemas/internal_autonomous_action_plan.json
+    tool_catalog: tool_catalog.yaml
+    skill_routing: skill_routing.yaml
+    rag_collections: [company_security_standards, project_documents, engagement_documents, verified_findings, global_security_references]
+    execution_boundary: platform_worker_layer_only
+    autonomy: safe_internal_workflow_only
+
+safety_controls:
+  direct_shell_access: forbidden
+  unrestricted_scanning: forbidden
+  secret_store_access: forbidden
+  finding_approval: human_only
+  report_approval: human_only
+  scope_expansion: formal_workflow_only

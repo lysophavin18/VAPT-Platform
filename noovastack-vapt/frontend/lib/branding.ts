@@ -1,0 +1,28 @@
+export const BRAND = {
+  productName: 'NoovaStack VAPT Platform',
+  shortName: 'NoovaStack',
+  productDescriptor: 'VAPT Platform',
+  companyName: 'Noova Stack Technology Co., Ltd.',
+  confidentiality: 'CONFIDENTIAL',
+  distributionNotice: 'Do not distribute without authorization',
+  logoAlt: 'NST - Noova Stack Technology Co., Ltd.',
+  assets: {
+    full: '/branding/nst-logo-full.png',
+    mark: '/branding/nst-logo-mark.png',
+    white: '/branding/nst-logo-white.png',
+    favicon: '/branding/nst-favicon.png',
+  },
+  colors: {
+    primaryBlue: '#0B5E9E',
+    darkBlue: '#083F6B',
+    lightBlue: '#EAF4FB',
+    navigationNavy: '#0B1F33',
+    pageBackground: '#F8FAFC',
+    borderGray: '#DCE3EA',
+    mainText: '#102033',
+    secondaryText: '#667085',
+    success: '#16A34A',
+    warning: '#F59E0B',
+    danger: '#DC2626',
+  },
+} as const;

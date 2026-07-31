@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NoovaStack Report Draft",
+  "type": "object",
+  "required": ["current_content", "ai_suggestion", "missing_information", "human_review_required"],
+  "properties": {
+    "current_content": { "type": "string" },
+    "ai_suggestion": { "type": "string" },
+    "missing_information": { "type": "array", "items": { "type": "string" } },
+    "evidence_ids": { "type": "array", "items": { "type": "string" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "human_review_required": { "type": "boolean", "const": true }
+  },
+  "additionalProperties": false
+}

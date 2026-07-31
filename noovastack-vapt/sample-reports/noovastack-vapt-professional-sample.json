@@ -1,0 +1,966 @@
+{
+  "document_control": {
+    "Document_Title": "NoovaStack VAPT Technical Security Assessment Report",
+    "Report_Number": "NST-VAPT-2026-83E6",
+    "Version": "1.0",
+    "Classification": "CONFIDENTIAL",
+    "Client": "Scheduled External Web Scan",
+    "Project": "Scheduled External Web Scan",
+    "Engagement": "Standard Vulnerability Scan",
+    "Target": "http://178.128.117.187:8080",
+    "Assessment_Type": "Standard Vulnerability Assessment",
+    "Assessment_Mode": "Black Box",
+    "Assessment_Period": "21 July 2026, 07:06 UTC to 21 July 2026, 07:07 UTC",
+    "Report_Date": "21 July 2026, 10:03 UTC",
+    "Prepared_By": "Noova Stack Technology Co., Ltd.",
+    "Reviewed_By": "Pending",
+    "Approved_By": "Pending",
+    "Report_Status": "Draft Pending Approval"
+  },
+  "cover_items": [
+    [
+      "Report Number",
+      "NST-VAPT-2026-83E6"
+    ],
+    [
+      "Version",
+      "1.0"
+    ],
+    [
+      "Classification",
+      "CONFIDENTIAL"
+    ],
+    [
+      "Client",
+      "Scheduled External Web Scan"
+    ],
+    [
+      "Project",
+      "Scheduled External Web Scan"
+    ],
+    [
+      "Engagement",
+      "Standard Vulnerability Scan"
+    ],
+    [
+      "Target",
+      "http://178.128.117.187:8080"
+    ],
+    [
+      "Assessment Type",
+      "Standard Vulnerability Assessment"
+    ],
+    [
+      "Assessment Mode",
+      "Black Box"
+    ],
+    [
+      "Assessment Period",
+      "21 July 2026, 07:06 UTC to 21 July 2026, 07:07 UTC"
+    ],
+    [
+      "Report Date",
+      "21 July 2026, 10:03 UTC"
+    ],
+    [
+      "Prepared By",
+      "Noova Stack Technology Co., Ltd."
+    ],
+    [
+      "Reviewed By",
+      "Pending"
+    ],
+    [
+      "Approved By",
+      "Pending"
+    ]
+  ],
+  "toc": [
+    {
+      "id": "document-control",
+      "title": "Document Control"
+    },
+    {
+      "id": "confidentiality-notice",
+      "title": "Confidentiality Notice"
+    },
+    {
+      "id": "table-of-contents",
+      "title": "Table of Contents"
+    },
+    {
+      "id": "executive-summary",
+      "title": "Executive Summary"
+    },
+    {
+      "id": "assessment-overview",
+      "title": "Assessment Overview"
+    },
+    {
+      "id": "scope",
+      "title": "Scope and Tested Assets"
+    },
+    {
+      "id": "methodology",
+      "title": "Assessment Methodology"
+    },
+    {
+      "id": "limitations",
+      "title": "Assessment Limitations"
+    },
+    {
+      "id": "risk-methodology",
+      "title": "Risk-Rating Methodology"
+    },
+    {
+      "id": "severity-summary",
+      "title": "Findings Severity Summary"
+    },
+    {
+      "id": "findings-summary",
+      "title": "Findings Summary Table"
+    },
+    {
+      "id": "detailed-findings",
+      "title": "Detailed Findings"
+    },
+    {
+      "id": "remediation-roadmap",
+      "title": "Remediation Roadmap"
+    },
+    {
+      "id": "positive-observations",
+      "title": "Positive Security Observations"
+    },
+    {
+      "id": "retest-status",
+      "title": "Retest Status"
+    },
+    {
+      "id": "conclusion",
+      "title": "Conclusion"
+    },
+    {
+      "id": "evidence-manifest",
+      "title": "Evidence Manifest"
+    },
+    {
+      "id": "references",
+      "title": "References"
+    },
+    {
+      "id": "approval",
+      "title": "Approval and Sign-Off"
+    }
+  ],
+  "executive_summary": "Noova Stack Technology Co., Ltd. conducted an authorized external security assessment of the identified target within the approved scope. The assessment evaluated publicly accessible attack surface and selected application security controls using safe, non-destructive techniques. The assessment covered 1 tested asset(s) and identified 3 verified observation(s): 1 Medium, 1 Low, 1 Informational. The highest identified severity was Medium. The main risk theme was browser security-header configuration and exposed service validation. Immediate remediation priority should focus on Missing Browser Security Headers. This assessment represents a point-in-time review, and focused retesting is recommended after remediation.",
+  "risk_cards": [
+    {
+      "label": "Overall Risk Rating",
+      "value": "Medium"
+    },
+    {
+      "label": "Verified Findings",
+      "value": 3
+    },
+    {
+      "label": "Critical",
+      "value": 0
+    },
+    {
+      "label": "High",
+      "value": 0
+    },
+    {
+      "label": "Medium",
+      "value": 1
+    },
+    {
+      "label": "Low",
+      "value": 1
+    },
+    {
+      "label": "Informational",
+      "value": 1
+    },
+    {
+      "label": "Assets Tested",
+      "value": 1
+    },
+    {
+      "label": "Retest Required",
+      "value": "Yes"
+    }
+  ],
+  "assessment_overview": [
+    [
+      "Project",
+      "Scheduled External Web Scan"
+    ],
+    [
+      "Engagement",
+      "Standard Vulnerability Scan"
+    ],
+    [
+      "Target",
+      "http://178.128.117.187:8080"
+    ],
+    [
+      "Assessment Type",
+      "Standard Vulnerability Assessment"
+    ],
+    [
+      "Assessment Mode",
+      "Black Box"
+    ],
+    [
+      "Scan Profile",
+      "standard"
+    ],
+    [
+      "Assessment Start",
+      "21 July 2026, 07:06 UTC"
+    ],
+    [
+      "Assessment Completion",
+      "21 July 2026, 07:07 UTC"
+    ],
+    [
+      "Testing Duration",
+      "1 minute 6 seconds"
+    ],
+    [
+      "Environment",
+      "testing"
+    ],
+    [
+      "Lead Tester",
+      "Noova Stack Technology Co., Ltd."
+    ],
+    [
+      "Reviewer",
+      "Pending"
+    ],
+    [
+      "Authorization Status",
+      "Authorized"
+    ]
+  ],
+  "scope_assets": [
+    {
+      "asset": "178.128.117.187",
+      "asset_type": "Web service",
+      "protocol": "HTTP",
+      "port": "8080",
+      "environment": "testing",
+      "testing_status": "Tested",
+      "notes": "Authorized in-scope asset"
+    }
+  ],
+  "methodology": {
+    "steps": [
+      "Authorization and scope validation",
+      "Target availability verification",
+      "Service discovery",
+      "HTTP response analysis",
+      "Security-header assessment",
+      "Technology-disclosure analysis",
+      "Evidence collection",
+      "Evidence integrity hashing",
+      "Finding validation",
+      "Severity classification",
+      "Human review",
+      "Report generation"
+    ],
+    "frameworks": [
+      "OWASP Web Security Testing Guide",
+      "OWASP Top 10 2021",
+      "CWE",
+      "CVSS-style severity scoring"
+    ]
+  },
+  "limitations": [
+    "Point-in-time assessment",
+    "1 external asset tested",
+    "Limited testing duration",
+    "No authenticated testing",
+    "No source-code review",
+    "No destructive testing",
+    "No denial-of-service testing",
+    "No social engineering",
+    "No production-data modification",
+    "No retesting completed"
+  ],
+  "risk_methodology": [
+    {
+      "key": "critical",
+      "label": "Critical",
+      "meaning": "Urgent risk with strong evidence of severe technical impact or exposure."
+    },
+    {
+      "key": "high",
+      "label": "High",
+      "meaning": "Significant exposure or exploitability requiring prompt remediation."
+    },
+    {
+      "key": "medium",
+      "label": "Medium",
+      "meaning": "Security weakness with meaningful technical impact or defense-in-depth reduction."
+    },
+    {
+      "key": "low",
+      "label": "Low",
+      "meaning": "Limited-impact issue or hardening gap."
+    },
+    {
+      "key": "informational",
+      "label": "Informational",
+      "meaning": "Observation requiring validation, tracking, or operational review."
+    }
+  ],
+  "severity_summary": [
+    {
+      "key": "critical",
+      "label": "Critical",
+      "count": 0,
+      "color": "#D92D20"
+    },
+    {
+      "key": "high",
+      "label": "High",
+      "count": 0,
+      "color": "#EA580C"
+    },
+    {
+      "key": "medium",
+      "label": "Medium",
+      "count": 1,
+      "color": "#D97706"
+    },
+    {
+      "key": "low",
+      "label": "Low",
+      "count": 1,
+      "color": "#2563EB"
+    },
+    {
+      "key": "informational",
+      "label": "Informational",
+      "count": 1,
+      "color": "#667085"
+    }
+  ],
+  "findings": [
+    {
+      "source_id": "2c17bc45-a5b0-4b2f-8f3b-2d777f27de70",
+      "stable_id": "NST-WEB-001",
+      "title": "Missing Browser Security Headers",
+      "severity_key": "medium",
+      "severity_label": "Medium",
+      "cvss_score": "5.3",
+      "cvss_vector": "Not Provided",
+      "owasp_category": "A05:2021 - Security Misconfiguration",
+      "cwe_id": "CWE-693",
+      "affected_asset": "http://178.128.117.187:8080",
+      "affected_port": "8080",
+      "affected_endpoint": "http://178.128.117.187:8080",
+      "http_method": "Not Provided",
+      "environment": "External",
+      "status_label": "Confirmed",
+      "evidence_status": "Verified",
+      "first_observed": "21 July 2026, 07:07 UTC",
+      "last_confirmed": "21 July 2026, 07:07 UTC",
+      "priority_label": "Priority 1",
+      "summary": "The assessed web service did not present one or more recommended browser security headers in the captured HTTP response evidence.",
+      "technical_description": "The scan workflow reviewed HTTP response metadata and observed that recommended browser-enforced controls were absent. Expected behavior is to configure appropriate headers aligned to application requirements so browsers can enforce additional client-side protections.",
+      "business_impact": "The available evidence supports a security-hardening concern; specific business impact was not provided.",
+      "technical_impact": "Reduced browser-enforced protection against selected client-side attack techniques and content-handling risks.",
+      "header_table": [
+        {
+          "header": "Content-Security-Policy",
+          "observed": "Missing",
+          "recommended": "Configure",
+          "purpose": "Restricts where browser-executed content can load from and can control framing through frame-ancestors.",
+          "notes": "Define an application-specific policy. Prefer frame-ancestors for modern frame-control enforcement."
+        },
+        {
+          "header": "X-Content-Type-Options",
+          "observed": "Missing",
+          "recommended": "Configure",
+          "purpose": "Reduces MIME-sniffing behavior that may cause browsers to interpret content unexpectedly.",
+          "notes": "Common value: nosniff."
+        },
+        {
+          "header": "Referrer-Policy",
+          "observed": "Missing",
+          "recommended": "Configure",
+          "purpose": "Controls how much referrer information is sent to other origins.",
+          "notes": "Common baseline: strict-origin-when-cross-origin, adjusted to application needs."
+        },
+        {
+          "header": "Permissions-Policy",
+          "observed": "Missing",
+          "recommended": "Configure",
+          "purpose": "Limits access to selected browser features and APIs.",
+          "notes": "Disable features not required by the application."
+        },
+        {
+          "header": "X-Frame-Options",
+          "observed": "Missing",
+          "recommended": "Configure",
+          "purpose": "Provides legacy frame-control protection where CSP frame-ancestors is not used or for compatibility.",
+          "notes": "May be retained for compatibility when appropriate; CSP frame-ancestors is generally preferred."
+        }
+      ],
+      "service_table": [],
+      "evidence": [
+        {
+          "evidence_id": "EVID-4889571D",
+          "finding_id": "NST-WEB-001",
+          "evidence_type": "Validated Observation",
+          "summary": "The application response is missing security headers that help browsers block clickjacking, content injection, MIME sniffing, and privacy leaks.",
+          "details": "Recommendation: Add a Content-Security-Policy, X-Frame-Options or frame-ancestors, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy suited to the application.",
+          "capture_time": "21 July 2026, 07:07 UTC",
+          "hash": "1091ec05c82568e0bd97f33effed7c3f5d9a4aa691d54bcfc137033bcc4dde83",
+          "hash_wrapped": "1091ec05c82568e0bd97f33effed7c3f\n5d9a4aa691d54bcfc137033bcc4dde83",
+          "affected_asset": "http://178.128.117.187:8080",
+          "redaction_status": "Redacted",
+          "included": "Yes"
+        }
+      ],
+      "steps_to_reproduce": "Detailed reproduction steps were not recorded by the scan workflow.",
+      "immediate_mitigation": "Add a tested baseline set of browser security headers in a staging environment before production rollout.",
+      "long_term_remediation": "Add a Content-Security-Policy, X-Frame-Options or frame-ancestors, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy suited to the application.",
+      "verification_steps": "Re-request the affected endpoint and confirm the expected headers are present with approved values.",
+      "references": [
+        {
+          "label": "CVSS Specification",
+          "url": "https://www.first.org/cvss/"
+        },
+        {
+          "label": "OWASP Secure Headers Project",
+          "url": "https://owasp.org/www-project-secure-headers/"
+        },
+        {
+          "label": "CWE-693: Protection Mechanism Failure",
+          "url": "https://cwe.mitre.org/data/definitions/693.html"
+        }
+      ],
+      "retest_status": "Not Retested",
+      "metadata": [
+        [
+          "Finding ID",
+          "NST-WEB-001"
+        ],
+        [
+          "Finding Title",
+          "Missing Browser Security Headers"
+        ],
+        [
+          "Severity",
+          "Medium"
+        ],
+        [
+          "CVSS Score",
+          "5.3"
+        ],
+        [
+          "CVSS Vector",
+          "Not Provided"
+        ],
+        [
+          "OWASP Category",
+          "A05:2021 - Security Misconfiguration"
+        ],
+        [
+          "CWE",
+          "CWE-693"
+        ],
+        [
+          "Affected Asset",
+          "http://178.128.117.187:8080"
+        ],
+        [
+          "Affected Port",
+          "8080"
+        ],
+        [
+          "Affected Endpoint",
+          "http://178.128.117.187:8080"
+        ],
+        [
+          "HTTP Method",
+          "Not Provided"
+        ],
+        [
+          "Environment",
+          "External"
+        ],
+        [
+          "Finding Status",
+          "Confirmed"
+        ],
+        [
+          "Evidence Status",
+          "Verified"
+        ],
+        [
+          "First Observed",
+          "21 July 2026, 07:07 UTC"
+        ],
+        [
+          "Last Confirmed",
+          "21 July 2026, 07:07 UTC"
+        ]
+      ]
+    },
+    {
+      "source_id": "212cf11a-0c66-4569-8cb7-f436d12b0eea",
+      "stable_id": "NST-WEB-002",
+      "title": "Server Header Disclosure",
+      "severity_key": "low",
+      "severity_label": "Low",
+      "cvss_score": "3.1",
+      "cvss_vector": "Not Provided",
+      "owasp_category": "A05:2021 - Security Misconfiguration",
+      "cwe_id": "CWE-200",
+      "affected_asset": "http://178.128.117.187:8080",
+      "affected_port": "8080",
+      "affected_endpoint": "http://178.128.117.187:8080",
+      "http_method": "Not Provided",
+      "environment": "External",
+      "status_label": "Confirmed",
+      "evidence_status": "Verified",
+      "first_observed": "21 July 2026, 07:07 UTC",
+      "last_confirmed": "21 July 2026, 07:07 UTC",
+      "priority_label": "Priority 2",
+      "summary": "The assessed service disclosed server technology information in the HTTP Server header.",
+      "technical_description": "The scan workflow reviewed HTTP response headers and observed server technology disclosure. Expected behavior is to minimize unnecessary technology disclosure in production responses where operationally feasible.",
+      "business_impact": "The available evidence supports a security-hardening concern; specific business impact was not provided.",
+      "technical_impact": "Unnecessary technology disclosure may assist attacker fingerprinting and targeting.",
+      "header_table": [
+        {
+          "header": "Content-Security-Policy",
+          "observed": "Missing",
+          "recommended": "Configure",
+          "purpose": "Restricts where browser-executed content can load from and can control framing through frame-ancestors.",
+          "notes": "Define an application-specific policy. Prefer frame-ancestors for modern frame-control enforcement."
+        },
+        {
+          "header": "X-Content-Type-Options",
+          "observed": "Missing",
+          "recommended": "Configure",
+          "purpose": "Reduces MIME-sniffing behavior that may cause browsers to interpret content unexpectedly.",
+          "notes": "Common value: nosniff."
+        },
+        {
+          "header": "Referrer-Policy",
+          "observed": "Missing",
+          "recommended": "Configure",
+          "purpose": "Controls how much referrer information is sent to other origins.",
+          "notes": "Common baseline: strict-origin-when-cross-origin, adjusted to application needs."
+        },
+        {
+          "header": "Permissions-Policy",
+          "observed": "Missing",
+          "recommended": "Configure",
+          "purpose": "Limits access to selected browser features and APIs.",
+          "notes": "Disable features not required by the application."
+        },
+        {
+          "header": "X-Frame-Options",
+          "observed": "Missing",
+          "recommended": "Configure",
+          "purpose": "Provides legacy frame-control protection where CSP frame-ancestors is not used or for compatibility.",
+          "notes": "May be retained for compatibility when appropriate; CSP frame-ancestors is generally preferred."
+        }
+      ],
+      "service_table": [],
+      "evidence": [
+        {
+          "evidence_id": "EVID-25B93EB5",
+          "finding_id": "NST-WEB-002",
+          "evidence_type": "Validated Observation",
+          "summary": "The application exposes the Server header value: HexStrikeDashboard/1.0 Python/3.14.4. This may reveal server implementation details to unauthenticated users.",
+          "details": "Recommendation: Reduce or remove detailed Server headers at the application server or reverse proxy layer.",
+          "capture_time": "21 July 2026, 07:07 UTC",
+          "hash": "726157b6746429e60beb7fab38fc3cf209155e9b3f32d1b1ccf533d540f9c6b4",
+          "hash_wrapped": "726157b6746429e60beb7fab38fc3cf2\n09155e9b3f32d1b1ccf533d540f9c6b4",
+          "affected_asset": "http://178.128.117.187:8080",
+          "redaction_status": "Redacted",
+          "included": "Yes"
+        }
+      ],
+      "steps_to_reproduce": "Detailed reproduction steps were not recorded by the scan workflow.",
+      "immediate_mitigation": "Reduce or remove unnecessary Server header detail where supported by the hosting stack.",
+      "long_term_remediation": "Reduce or remove detailed Server headers at the application server or reverse proxy layer.",
+      "verification_steps": "Re-request the affected endpoint and confirm the Server header no longer exposes unnecessary technology detail.",
+      "references": [
+        {
+          "label": "CVSS Specification",
+          "url": "https://www.first.org/cvss/"
+        },
+        {
+          "label": "CWE-200: Exposure of Sensitive Information",
+          "url": "https://cwe.mitre.org/data/definitions/200.html"
+        }
+      ],
+      "retest_status": "Not Retested",
+      "metadata": [
+        [
+          "Finding ID",
+          "NST-WEB-002"
+        ],
+        [
+          "Finding Title",
+          "Server Header Disclosure"
+        ],
+        [
+          "Severity",
+          "Low"
+        ],
+        [
+          "CVSS Score",
+          "3.1"
+        ],
+        [
+          "CVSS Vector",
+          "Not Provided"
+        ],
+        [
+          "OWASP Category",
+          "A05:2021 - Security Misconfiguration"
+        ],
+        [
+          "CWE",
+          "CWE-200"
+        ],
+        [
+          "Affected Asset",
+          "http://178.128.117.187:8080"
+        ],
+        [
+          "Affected Port",
+          "8080"
+        ],
+        [
+          "Affected Endpoint",
+          "http://178.128.117.187:8080"
+        ],
+        [
+          "HTTP Method",
+          "Not Provided"
+        ],
+        [
+          "Environment",
+          "External"
+        ],
+        [
+          "Finding Status",
+          "Confirmed"
+        ],
+        [
+          "Evidence Status",
+          "Verified"
+        ],
+        [
+          "First Observed",
+          "21 July 2026, 07:07 UTC"
+        ],
+        [
+          "Last Confirmed",
+          "21 July 2026, 07:07 UTC"
+        ]
+      ]
+    },
+    {
+      "source_id": "0e1798bd-fc1d-4b80-8d36-3490865fc8b4",
+      "stable_id": "NST-NET-001",
+      "title": "Publicly Accessible TCP Service",
+      "severity_key": "informational",
+      "severity_label": "Informational",
+      "cvss_score": "0.0",
+      "cvss_vector": "Not Provided",
+      "owasp_category": "A05:2021 - Security Misconfiguration",
+      "cwe_id": "CWE-200",
+      "affected_asset": "http://178.128.117.187:8080",
+      "affected_port": "8080",
+      "affected_endpoint": "http://178.128.117.187:8080",
+      "http_method": "Not Provided",
+      "environment": "External",
+      "status_label": "Confirmed",
+      "evidence_status": "Verified",
+      "first_observed": "21 July 2026, 07:06 UTC",
+      "last_confirmed": "21 July 2026, 07:06 UTC",
+      "priority_label": "Priority 3",
+      "summary": "A TCP service was reachable from the assessment network and should be validated against business requirements.",
+      "technical_description": "The scan workflow performed service discovery and observed a reachable TCP service. This does not indicate a vulnerability by itself, but it increases externally visible attack surface and requires operational validation.",
+      "business_impact": "Business justification for the exposed service was not provided in the report data.",
+      "technical_impact": "External reachability expands the attack surface and should be limited to services with a validated need.",
+      "header_table": [],
+      "service_table": [
+        {
+          "host": "http://178.128.117.187:8080",
+          "port": "8080",
+          "protocol": "TCP",
+          "detected_service": "HTTP",
+          "exposure": "Publicly accessible",
+          "business_justification": "Not Provided",
+          "recommended_action": "Validate operational necessity and restrict exposure where not required."
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "EVID-F0D684A2",
+          "finding_id": "NST-NET-001",
+          "evidence_type": "Validated Observation",
+          "summary": "The assessment discovered reachable TCP services: 8080/http.",
+          "details": "Recommendation: Review exposed services and close ports that are not required for the application or testing scope.",
+          "capture_time": "21 July 2026, 07:06 UTC",
+          "hash": "dc4b26ba1e9dc2cb1ff0b4319a9d77f8a5dc862bd0755184c74bde809b2a5c7b",
+          "hash_wrapped": "dc4b26ba1e9dc2cb1ff0b4319a9d77f8\na5dc862bd0755184c74bde809b2a5c7b",
+          "affected_asset": "http://178.128.117.187:8080",
+          "redaction_status": "Redacted",
+          "included": "Yes"
+        }
+      ],
+      "steps_to_reproduce": "Detailed reproduction steps were not recorded by the scan workflow.",
+      "immediate_mitigation": "Confirm that external access is required and restrict source networks if not publicly necessary.",
+      "long_term_remediation": "Review exposed services and close ports that are not required for the application or testing scope.",
+      "verification_steps": "Repeat external service discovery and confirm exposure matches the approved business requirement.",
+      "references": [
+        {
+          "label": "CVSS Specification",
+          "url": "https://www.first.org/cvss/"
+        }
+      ],
+      "retest_status": "Not Retested",
+      "metadata": [
+        [
+          "Finding ID",
+          "NST-NET-001"
+        ],
+        [
+          "Finding Title",
+          "Publicly Accessible TCP Service"
+        ],
+        [
+          "Severity",
+          "Informational"
+        ],
+        [
+          "CVSS Score",
+          "0.0"
+        ],
+        [
+          "CVSS Vector",
+          "Not Provided"
+        ],
+        [
+          "OWASP Category",
+          "A05:2021 - Security Misconfiguration"
+        ],
+        [
+          "CWE",
+          "CWE-200"
+        ],
+        [
+          "Affected Asset",
+          "http://178.128.117.187:8080"
+        ],
+        [
+          "Affected Port",
+          "8080"
+        ],
+        [
+          "Affected Endpoint",
+          "http://178.128.117.187:8080"
+        ],
+        [
+          "HTTP Method",
+          "Not Provided"
+        ],
+        [
+          "Environment",
+          "External"
+        ],
+        [
+          "Finding Status",
+          "Confirmed"
+        ],
+        [
+          "Evidence Status",
+          "Verified"
+        ],
+        [
+          "First Observed",
+          "21 July 2026, 07:06 UTC"
+        ],
+        [
+          "Last Confirmed",
+          "21 July 2026, 07:06 UTC"
+        ]
+      ]
+    }
+  ],
+  "roadmap": [
+    {
+      "priority": "Priority 1",
+      "finding_id": "NST-WEB-001",
+      "action": "Add a Content-Security-Policy, X-Frame-Options or frame-ancestors, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy suited to the application.",
+      "owner": "Application Owner",
+      "timeframe": "7-14 days",
+      "retest_required": "Yes",
+      "status": "Open"
+    },
+    {
+      "priority": "Priority 2",
+      "finding_id": "NST-WEB-002",
+      "action": "Reduce or remove detailed Server headers at the application server or reverse proxy layer.",
+      "owner": "Application Owner",
+      "timeframe": "30 days",
+      "retest_required": "Yes",
+      "status": "Open"
+    },
+    {
+      "priority": "Priority 3",
+      "finding_id": "NST-NET-001",
+      "action": "Review exposed services and close ports that are not required for the application or testing scope.",
+      "owner": "Infrastructure Owner",
+      "timeframe": "Validate operational necessity",
+      "retest_required": "Yes",
+      "status": "Open"
+    }
+  ],
+  "positive_observations": [
+    "The assessment completed without destructive techniques.",
+    "Evidence records were integrity-hashed.",
+    "No Critical or High findings were verified."
+  ],
+  "conclusion": "The assessment identified remediation focus areas involving browser security-header configuration, reduction of unnecessary server disclosure, review of publicly exposed services. A focused retest should be performed after remediation. This assessment represents a point-in-time review of the approved scope. Security conditions may change as the application, infrastructure, and dependencies evolve.",
+  "evidence_manifest": [
+    {
+      "evidence_id": "EVID-4889571D",
+      "finding_id": "NST-WEB-001",
+      "evidence_type": "Validated Observation",
+      "affected_asset": "http://178.128.117.187:8080",
+      "capture_time": "21 July 2026, 07:07 UTC",
+      "sha256": "1091ec05c82568e0bd97f33effed7c3f5d9a4aa691d54bcfc137033bcc4dde83",
+      "hash_wrapped": "1091ec05c82568e0bd97f33effed7c3f\n5d9a4aa691d54bcfc137033bcc4dde83",
+      "redaction_status": "Redacted",
+      "included": "Yes"
+    },
+    {
+      "evidence_id": "EVID-25B93EB5",
+      "finding_id": "NST-WEB-002",
+      "evidence_type": "Validated Observation",
+      "affected_asset": "http://178.128.117.187:8080",
+      "capture_time": "21 July 2026, 07:07 UTC",
+      "sha256": "726157b6746429e60beb7fab38fc3cf209155e9b3f32d1b1ccf533d540f9c6b4",
+      "hash_wrapped": "726157b6746429e60beb7fab38fc3cf2\n09155e9b3f32d1b1ccf533d540f9c6b4",
+      "redaction_status": "Redacted",
+      "included": "Yes"
+    },
+    {
+      "evidence_id": "EVID-F0D684A2",
+      "finding_id": "NST-NET-001",
+      "evidence_type": "Validated Observation",
+      "affected_asset": "http://178.128.117.187:8080",
+      "capture_time": "21 July 2026, 07:06 UTC",
+      "sha256": "dc4b26ba1e9dc2cb1ff0b4319a9d77f8a5dc862bd0755184c74bde809b2a5c7b",
+      "hash_wrapped": "dc4b26ba1e9dc2cb1ff0b4319a9d77f8\na5dc862bd0755184c74bde809b2a5c7b",
+      "redaction_status": "Redacted",
+      "included": "Yes"
+    }
+  ],
+  "evidence_manifest_raw": [
+    {
+      "evidence_id": "EVID-4889571D",
+      "finding_id": "NST-WEB-001",
+      "evidence_type": "Validated Observation",
+      "affected_asset": "http://178.128.117.187:8080",
+      "capture_time": "21 July 2026, 07:07 UTC",
+      "sha256": "1091ec05c82568e0bd97f33effed7c3f5d9a4aa691d54bcfc137033bcc4dde83",
+      "hash_wrapped": "1091ec05c82568e0bd97f33effed7c3f\n5d9a4aa691d54bcfc137033bcc4dde83",
+      "redaction_status": "Redacted",
+      "included": "Yes",
+      "details": "Recommendation: Add a Content-Security-Policy, X-Frame-Options or frame-ancestors, X-Content-Type-Options, Referrer-Policy, and Permissions-Policy suited to the application."
+    },
+    {
+      "evidence_id": "EVID-25B93EB5",
+      "finding_id": "NST-WEB-002",
+      "evidence_type": "Validated Observation",
+      "affected_asset": "http://178.128.117.187:8080",
+      "capture_time": "21 July 2026, 07:07 UTC",
+      "sha256": "726157b6746429e60beb7fab38fc3cf209155e9b3f32d1b1ccf533d540f9c6b4",
+      "hash_wrapped": "726157b6746429e60beb7fab38fc3cf2\n09155e9b3f32d1b1ccf533d540f9c6b4",
+      "redaction_status": "Redacted",
+      "included": "Yes",
+      "details": "Recommendation: Reduce or remove detailed Server headers at the application server or reverse proxy layer."
+    },
+    {
+      "evidence_id": "EVID-F0D684A2",
+      "finding_id": "NST-NET-001",
+      "evidence_type": "Validated Observation",
+      "affected_asset": "http://178.128.117.187:8080",
+      "capture_time": "21 July 2026, 07:06 UTC",
+      "sha256": "dc4b26ba1e9dc2cb1ff0b4319a9d77f8a5dc862bd0755184c74bde809b2a5c7b",
+      "hash_wrapped": "dc4b26ba1e9dc2cb1ff0b4319a9d77f8\na5dc862bd0755184c74bde809b2a5c7b",
+      "redaction_status": "Redacted",
+      "included": "Yes",
+      "details": "Recommendation: Review exposed services and close ports that are not required for the application or testing scope."
+    }
+  ],
+  "references": [
+    {
+      "label": "CVSS Specification",
+      "url": "https://www.first.org/cvss/"
+    },
+    {
+      "label": "OWASP Secure Headers Project",
+      "url": "https://owasp.org/www-project-secure-headers/"
+    },
+    {
+      "label": "CWE-693: Protection Mechanism Failure",
+      "url": "https://cwe.mitre.org/data/definitions/693.html"
+    },
+    {
+      "label": "CWE-200: Exposure of Sensitive Information",
+      "url": "https://cwe.mitre.org/data/definitions/200.html"
+    }
+  ],
+  "signoff": [
+    {
+      "role": "Prepared By",
+      "name": "Pending",
+      "title": "Pending",
+      "organization": "Noova Stack Technology Co., Ltd.",
+      "signature": "Pending",
+      "date": "Pending"
+    },
+    {
+      "role": "Reviewed By",
+      "name": "Pending",
+      "title": "Pending",
+      "organization": "Noova Stack Technology Co., Ltd.",
+      "signature": "Pending",
+      "date": "Pending"
+    },
+    {
+      "role": "Approved By",
+      "name": "Pending",
+      "title": "Pending",
+      "organization": "Noova Stack Technology Co., Ltd.",
+      "signature": "Pending",
+      "date": "Pending"
+    },
+    {
+      "role": "Client Acknowledgement",
+      "name": "Pending",
+      "title": "Pending",
+      "organization": "Pending",
+      "signature": "Pending",
+      "date": "Pending"
+    }
+  ]
+}

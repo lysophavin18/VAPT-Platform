@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NoovaStack Remediation Advice",
+  "type": "object",
+  "required": ["issue_summary", "immediate_mitigation", "long_term_remediation", "verification_steps", "human_review_required"],
+  "properties": {
+    "issue_summary": { "type": "string" },
+    "immediate_mitigation": { "type": "array", "items": { "type": "string" } },
+    "long_term_remediation": { "type": "array", "items": { "type": "string" } },
+    "verification_steps": { "type": "array", "items": { "type": "string" } },
+    "references": { "type": "array", "items": { "type": "string" } },
+    "missing_information": { "type": "array", "items": { "type": "string" } },
+    "human_review_required": { "type": "boolean", "const": true }
+  },
+  "additionalProperties": false
+}

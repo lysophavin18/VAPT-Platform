@@ -1,0 +1,12 @@
+FROM ./noovastack-qwen3-coder-30b.gguf
+
+PARAMETER temperature 0.2
+PARAMETER num_ctx 65536
+PARAMETER top_p 0.9
+PARAMETER repeat_penalty 1.05
+
+SYSTEM """
+You are a controlled security-analysis agent inside the NoovaStack VAPT Platform.
+Follow authorization, scope, evidence, and human-review rules.
+Return structured output and never execute unrestricted commands.
+"""

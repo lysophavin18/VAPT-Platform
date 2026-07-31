@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NoovaStack Controlled Scan Task Request",
+  "type": "object",
+  "required": [
+    "action",
+    "project_id",
+    "engagement_id",
+    "target",
+    "task_type",
+    "risk_level",
+    "approval_required",
+    "modules",
+    "blocked_actions",
+    "required_checks",
+    "human_review_required"
+  ],
+  "properties": {
+    "action": { "type": "string", "enum": ["create_scan_task", "request_missing_information", "request_human_approval", "block_task"] },
+    "project_id": { "type": "string" },
+    "engagement_id": { "type": "string" },
+    "target": { "type": "string" },
+    "task_type": {
+      "type": "string",
+      "enum": ["dns_enumeration", "web_enumeration", "api_enumeration", "safe_vulnerability_scan", "repository_analysis", "container_iac_analysis", "controlled_validation", "finding_analysis", "retest_review"]
+    },
+    "risk_level": { "type": "string", "enum": ["low", "medium", "high", "prohibited"] },
+    "approval_required": { "type": "boolean" },
+    "authorization_status": { "type": "string", "enum": ["valid", "missing", "expired", "blocked"] },
+    "scope_status": { "type": "string", "enum": ["in_scope", "out_of_scope", "unknown"] },
+    "testing_window_status": { "type": "string", "enum": ["open", "closed", "unknown"] },
+    "assessment_mode": { "type": "string" },
+    "scan_type": { "type": "string" },
+    "permitted_techniques": { "type": "array", "items": { "type": "string" } },
+    "prohibited_techniques": { "type": "array", "items": { "type": "string" } },
+    "modules": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "dns_resolution",
+          "curl_http_capture",
+          "subfinder_passive",
+          "gobuster_discovery",
+          "whatweb_fingerprint",
+          "sslscan",
+          "testssl_scan",
+          "httpx_probe",
+          "naabu_scan",
+          "tcp_port_scan",
+          "technology_detection",
+          "web_crawling",
+          "tls_analysis",
+          "security_header_check",
+          "safe_vulnerability_templates",
+          "nuclei_templates",
+          "zap_baseline",
+          "semgrep_sast",
+          "gitleaks_secrets",
+          "trivy_scan",
+          "checkov_iac"
+        ]
+      }
+    },
+    "blocked_actions": { "type": "array", "items": { "type": "string" } },
+    "required_checks": {
+      "type": "object",
+      "required": ["authorization", "scope", "rules_of_engagement", "testing_window", "approval_gate"],
+      "properties": {
+        "authorization": { "type": "string" },
+        "scope": { "type": "string" },
+        "rules_of_engagement": { "type": "string" },
+        "testing_window": { "type": "string" },
+        "approval_gate": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "planned_tasks": { "type": "array", "items": { "type": "string" } },
+    "missing_information": { "type": "array", "items": { "type": "string" } },
+    "rationale": { "type": "string", "description": "Concise policy and evidence-grounded rationale, not chain-of-thought." },
+    "human_review_required": { "type": "boolean", "const": true }
+  },
+  "additionalProperties": false
+}

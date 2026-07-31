@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NoovaStack Internal Autonomous Assessment Action Plan",
+  "type": "object",
+  "required": [
+    "action",
+    "autonomy_level",
+    "authorization_status",
+    "scope_status",
+    "testing_window_status",
+    "risk_classification",
+    "target",
+    "assessment_mode",
+    "scan_depth",
+    "selected_modules",
+    "required_approvals",
+    "blocked_activities",
+    "execution_plan",
+    "human_review_required"
+  ],
+  "properties": {
+    "action": {
+      "type": "string",
+      "enum": ["proceed", "request_missing_information", "request_human_approval", "block"]
+    },
+    "autonomy_level": {
+      "type": "string",
+      "enum": ["advisory_only", "autonomous_safe_workflow", "approval_required", "blocked"]
+    },
+    "project_id": { "type": ["string", "null"] },
+    "engagement_id": { "type": ["string", "null"] },
+    "asset_id": { "type": ["string", "null"] },
+    "scan_id": { "type": ["string", "null"] },
+    "authorization_status": {
+      "type": "string",
+      "enum": ["authorized", "missing", "expired", "blocked", "unknown"]
+    },
+    "scope_status": {
+      "type": "string",
+      "enum": ["in_scope", "out_of_scope", "pending_review", "unknown"]
+    },
+    "testing_window_status": {
+      "type": "string",
+      "enum": ["open", "closed", "unknown"]
+    },
+    "target_availability": {
+      "type": "string",
+      "enum": ["reachable", "unreachable", "not_checked", "unknown"]
+    },
+    "risk_classification": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "prohibited"]
+    },
+    "target": { "type": "string" },
+    "assessment_mode": { "type": "string" },
+    "scan_depth": { "type": "string" },
+    "selected_modules": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "required_approvals": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "blocked_activities": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "execution_plan": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "missing_information": {
+      "type": "array",
+      "items": { "type": "string" },
+      "default": []
+    },
+    "platform_actions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "allowed", "reason"],
+        "properties": {
+          "name": { "type": "string" },
+          "allowed": { "type": "boolean" },
+          "reason": { "type": "string" }
+        },
+        "additionalProperties": false
+      },
+      "default": []
+    },
+    "rationale": {
+      "type": "string",
+      "description": "Concise policy-grounded rationale, not chain-of-thought."
+    },
+    "human_review_required": { "type": "boolean", "const": true }
+  },
+  "additionalProperties": false
+}

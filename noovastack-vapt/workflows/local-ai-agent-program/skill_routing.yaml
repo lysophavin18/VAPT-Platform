@@ -1,0 +1,133 @@
+purpose: Teach NoovaStack agents when and how to select approved skills, tools, scan profiles, and specialist agents.
+
+selection_order:
+  - validate_authorization_scope_and_testing_window
+  - identify_user_intent
+  - choose_specialist_agent
+  - choose_scan_profile_or_tool_module
+  - check_required_context
+  - check_risk_and_approval_gate
+  - request_platform_worker_task
+  - collect_evidence
+  - normalize_or_escalate_to_human_review
+
+intent_routes:
+  create_assessment_plan:
+    keywords: [plan, assessment, scope, engagement, rules of engagement, roe]
+    primary_agent: engagement_planner
+    required_context: [project_id, engagement_id, target, assessment_mode, scope, rules_of_engagement]
+    output: assessment_plan
+
+  autonomous_internal_scan:
+    keywords: [run scan, create scan, launch scan, internal lab, black box, standard scan, quick scan]
+    primary_agent: internal_autonomous_assessment_agent
+    required_context: [target, authorization_status, scope_status, testing_window_status, assessment_mode, scan_depth]
+    output: internal_autonomous_action_plan
+
+  controlled_pentest_task:
+    keywords: [pentest, enumerate, crawl, nuclei, httpx, whatweb, tls, headers, endpoint discovery]
+    primary_agent: pentest_agent
+    required_context: [project_id, engagement_id, target, scope_status, rules_of_engagement]
+    output: scan_task_request
+
+  finding_validation:
+    keywords: [finding, verify, false positive, evidence, impact, severity, cvss, owasp, cwe]
+    primary_agent: finding_judge
+    required_context: [finding_id_or_claim, evidence, expected_behavior, actual_behavior, scope_status]
+    output: finding_judgment
+
+  remediation_guidance:
+    keywords: [fix, remediation, mitigation, patch, hardening, developer steps]
+    primary_agent: remediation_advisor
+    required_context: [finding, affected_component, evidence, environment]
+    output: remediation_advice
+
+  report_drafting:
+    keywords: [report, executive summary, technical report, export, writeup]
+    primary_agent: report_writer
+    required_context: [scan_id, verified_findings, scope, report_template]
+    output: report_draft
+
+  retest_review:
+    keywords: [retest, fixed, verify fix, regression, remediation validation]
+    primary_agent: retest_analyst
+    required_context: [finding_id, original_evidence, retest_evidence]
+    output: retest_review
+
+tool_routes:
+  target_availability_verification:
+    preferred_modules: [curl_http_capture, httpx_probe]
+    risk_level: low
+    use_when: Check whether an approved HTTP or HTTPS target is reachable and collect response metadata.
+    required_context: [approved_target_url]
+    evidence_needed: [status_code, response_headers, redirect_chain]
+    avoid_when: [target_out_of_scope, testing_window_closed]
+
+  technology_detection:
+    preferred_modules: [whatweb_fingerprint, technology_detection, httpx_probe]
+    risk_level: low
+    use_when: Identify frameworks, servers, headers, and visible technologies on approved web targets.
+    required_context: [approved_target_url]
+    evidence_needed: [detected_technology, confidence, source_response]
+    avoid_when: [aggressive_plugins_required]
+
+  security_header_analysis:
+    preferred_modules: [curl_http_capture, security_header_check, safe_vulnerability_templates]
+    risk_level: low
+    use_when: Check browser hardening headers and safe HTTP response security posture.
+    required_context: [approved_target_url]
+    evidence_needed: [response_headers, missing_headers, affected_url]
+    avoid_when: []
+
+  tls_analysis:
+    preferred_modules: [sslscan, testssl_scan, tls_analysis]
+    risk_level: low
+    use_when: HTTPS is available and certificate, protocol, or cipher posture needs review.
+    required_context: [approved_host, approved_port]
+    evidence_needed: [protocols, ciphers, certificate_metadata]
+    avoid_when: [http_only_target, repeated_handshake_stress]
+
+  passive_subdomain_discovery:
+    preferred_modules: [subfinder_passive]
+    risk_level: low
+    use_when: Approved root domain is in scope and passive discovery is allowed.
+    required_context: [approved_root_domain]
+    evidence_needed: [subdomain, source, resolved_status]
+    avoid_when: [ip_only_target, active_bruteforce_requested]
+
+  bounded_endpoint_discovery:
+    preferred_modules: [web_crawling, gobuster_discovery, httpx_probe]
+    risk_level: medium
+    use_when: Need endpoint or directory discovery on an approved target with rate limits.
+    required_context: [approved_target_url, rate_limit, scan_profile_or_human_approval]
+    evidence_needed: [path_or_url, status_code, content_length, redirect_location]
+    avoid_when: [recursive_unbounded, aggressive_rate, credential_guessing]
+
+  safe_vulnerability_checks:
+    preferred_modules: [safe_vulnerability_templates, nuclei_templates, zap_baseline, owasp_top_10]
+    risk_level: medium
+    use_when: Run non-destructive OWASP-aligned checks through approved platform workers.
+    required_context: [approved_target_url, rules_of_engagement, scan_profile]
+    evidence_needed: [template_id, affected_url, request_summary, response_summary, confidence]
+    avoid_when: [destructive_payloads, exploit_chaining, out_of_scope_testing]
+
+  finding_normalization:
+    preferred_modules: [create_candidate_finding]
+    risk_level: low
+    use_when: Convert evidence into a candidate finding for human review.
+    required_context: [claim, evidence_references, expected_behavior, actual_behavior]
+    evidence_needed: [evidence_ids, affected_endpoint, observed_behavior]
+    avoid_when: [no_evidence, unsupported_claim]
+
+approval_rules:
+  auto_allowed_after_validation: [low]
+  profile_allowed_after_validation: [medium]
+  human_approval_required: [high]
+  always_block: [prohibited]
+
+learning_notes:
+  - Prefer scan profiles for broad assessment requests.
+  - Prefer specific tool modules for narrow evidence collection requests.
+  - Never choose a tool before authorization, scope, and testing window checks.
+  - If evidence is weak, route to finding_judge and return FLAGGED or REJECTED.
+  - If the user asks for a final decision, require human review.

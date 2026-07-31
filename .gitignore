@@ -1,1 +1,54 @@
-/.env
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+*.log
+.pytest_cache/
+.coverage
+htmlcov/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+
+# Node / Next.js
+node_modules/
+.pnpm-store/
+.next/
+out/
+dist/
+*.tsbuildinfo
+
+# Generated reports and outputs
+reports/
+results/
+evidence/
+*.pdf
+*.html
+scan_outputs/
+celerybeat-schedule
+test-results/
+playwright-report/
+coverage/
+.vitest/
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Test and temporary files
+tmp/
+temp/
+*.tmp
+
+# Local untrusted reference clones
+noovastack-vapt/workflows/local-ai-agent-program/external-skills/hack-skills/

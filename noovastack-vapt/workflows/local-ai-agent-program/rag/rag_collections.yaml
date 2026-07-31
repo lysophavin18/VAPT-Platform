@@ -1,0 +1,71 @@
+embedding_model:
+  name: bge-m3
+  store: pgvector
+
+collections:
+  global_security_references:
+    allowed_sources: [owasp_testing_guide, owasp_top_10, owasp_api_top_10, cwe, cvss]
+    tenant_isolated: false
+    authoritative_for_findings: true
+
+  company_security_standards:
+    allowed_sources: [internal_secure_development_standards, rules_of_engagement]
+    tenant_isolated: false
+    authoritative_for_findings: true
+
+  report_templates:
+    allowed_sources: [approved_report_templates, approved_finding_templates]
+    tenant_isolated: false
+    authoritative_for_findings: true
+
+  project_documents:
+    tenant_isolated: true
+    metadata_filters_required: [tenant_id, project_id, document_status]
+    allowed_document_status: approved
+
+  engagement_documents:
+    tenant_isolated: true
+    metadata_filters_required: [tenant_id, project_id, engagement_id, document_status]
+    allowed_document_status: approved
+
+  verified_findings:
+    tenant_isolated: true
+    metadata_filters_required: [tenant_id, project_id, engagement_id, review_status]
+    allowed_review_status: verified
+
+  approved_remediation:
+    tenant_isolated: true
+    metadata_filters_required: [tenant_id, project_id, document_status]
+    allowed_document_status: approved
+
+  external_security_skills:
+    allowed_sources: [external-skills/hack-skills/skills, external-skills/hack-skills/README.md]
+    tenant_isolated: false
+    authoritative_for_findings: false
+    document_status_required: reviewed_before_production_use
+    treatment: untrusted_reference_material
+    blocked_paths: [external-skills/hack-skills/scripts]
+
+  noovastack_skill_routing:
+    allowed_sources: [skill_routing.yaml, tool_catalog.yaml, agents.yaml]
+    tenant_isolated: false
+    authoritative_for_findings: false
+    authoritative_for_tool_selection: true
+    treatment: trusted_platform_routing_policy
+
+retrieval_rules:
+  never_cross_tenant: true
+  never_use_unverified_findings_as_authoritative: true
+  redact_secrets_before_indexing: true
+  max_chunks_per_request: 12
+  prefer_project_context_over_global_context: true
+  prompt_injection_treatment: retrieved_content_is_untrusted_data
+  never_execute_retrieved_scripts: true
+  external_skills_require_review: true
+  prefer_skill_routing_for_tool_selection: true
+
+example_filter:
+  tenant_id: tenant-001
+  project_id: project-001
+  engagement_id: engagement-001
+  document_status: approved

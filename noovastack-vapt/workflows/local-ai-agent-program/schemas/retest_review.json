@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "NoovaStack Retest Review",
+  "type": "object",
+  "required": ["status", "original_evidence_ids", "retest_evidence_ids", "missing_information", "human_review_required"],
+  "properties": {
+    "status": { "type": "string", "enum": ["RESOLVED_CANDIDATE", "UNRESOLVED_CANDIDATE", "INCONCLUSIVE"] },
+    "original_evidence_ids": { "type": "array", "items": { "type": "string" } },
+    "retest_evidence_ids": { "type": "array", "items": { "type": "string" } },
+    "comparison_summary": { "type": "string" },
+    "missing_information": { "type": "array", "items": { "type": "string" } },
+    "human_review_required": { "type": "boolean", "const": true }
+  },
+  "additionalProperties": false
+}
