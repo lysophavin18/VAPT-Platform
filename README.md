@@ -1,4 +1,4 @@
-# NoovaStack VAPT Repository
+#  VAPT Repository
 
 This repository contains the NoovaStack VAPT platform. The active application lives in `noovastack-vapt/`.
 
