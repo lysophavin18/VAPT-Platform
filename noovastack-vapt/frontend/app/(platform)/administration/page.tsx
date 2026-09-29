@@ -14,7 +14,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { api, type AdminSettings } from '@/lib/api-client';
 import type { ScanProfile, User } from '@/types';
 
-const roles = ['admin', 'manager', 'analyst', 'viewer'];
+const roles = ['admin', 'manager', 'security_team', 'analyst', 'viewer'];
 const adminSections = ['Tool Policies', 'Safety Policies', 'Report Templates', 'Platform Settings'];
 
 type UserProfileDraft = Pick<User, 'email' | 'username' | 'full_name' | 'role'> & { is_active: boolean };

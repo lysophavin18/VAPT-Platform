@@ -52,13 +52,16 @@ async def get_current_user(
         return None
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
+        if payload.get("type") != "access":
+            return None
         user_id: str = payload.get("sub")
         if user_id is None:
             return None
-    except JWTError:
+        user_uuid = uuid.UUID(user_id)
+    except (JWTError, ValueError, TypeError):
         return None
 
-    result = await db.execute(select(User).where(User.id == uuid.UUID(user_id)))
+    result = await db.execute(select(User).where(User.id == user_uuid))
     user = result.scalar_one_or_none()
     if user is None or not user.is_active:
         return None
@@ -77,7 +80,7 @@ async def require_user(current_user: Optional[User] = Depends(get_current_user))
 class RoleChecker:
     def __init__(self, role: str):
         self.role = role
-        self.hierarchy = {"admin": 4, "manager": 3, "analyst": 2, "viewer": 1}
+        self.hierarchy = {"admin": 4, "manager": 3, "security_team": 3, "analyst": 2, "viewer": 1}
 
     async def __call__(self, current_user: User = Depends(require_user)) -> User:
         user_level = self.hierarchy.get(current_user.role, 0)
@@ -93,3 +96,14 @@ class RoleChecker:
 require_admin = RoleChecker("admin")
 require_manager = RoleChecker("manager")
 require_analyst = RoleChecker("analyst")
+
+from auth.authorization import (
+    get_asset_or_404,
+    get_engagement_or_404,
+    get_finding_or_404,
+    get_project_or_404,
+    get_scan_or_404,
+    get_schedule_or_404,
+    has_global_project_access,
+    project_access_clause,
+)

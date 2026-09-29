@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from database.models import AuditLog, Engagement, Project
-from auth import require_user, User, require_manager
+from auth import get_engagement_or_404, get_project_or_404, require_user, User, require_manager
 from api.schemas import EngagementCreate, EngagementResponse
 
 router = APIRouter()
@@ -20,9 +20,7 @@ async def create_engagement(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    proj = await db.execute(select(Project).where(Project.id == project_id))
-    if not proj.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Project not found")
+    await get_project_or_404(db, project_id, current_user)
 
     engagement = Engagement(
         project_id=project_id,
@@ -53,6 +51,7 @@ async def list_engagements(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
+    await get_project_or_404(db, project_id, current_user)
     result = await db.execute(
         select(Engagement)
         .where(Engagement.project_id == project_id)
@@ -67,11 +66,7 @@ async def get_engagement(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Engagement).where(Engagement.id == engagement_id))
-    eng = result.scalar_one_or_none()
-    if not eng:
-        raise HTTPException(status_code=404, detail="Engagement not found")
-    return eng
+    return await get_engagement_or_404(db, engagement_id, current_user)
 
 
 @router.post("/engagements/{engagement_id}/authorize", response_model=EngagementResponse)
@@ -80,10 +75,7 @@ async def authorize_engagement(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager),
 ):
-    result = await db.execute(select(Engagement).where(Engagement.id == engagement_id))
-    eng = result.scalar_one_or_none()
-    if not eng:
-        raise HTTPException(status_code=404, detail="Engagement not found")
+    eng = await get_engagement_or_404(db, engagement_id, current_user)
     eng.authorization_status = "authorized"
     eng.status = "active"
     db.add(AuditLog(
@@ -105,10 +97,7 @@ async def close_engagement(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager),
 ):
-    result = await db.execute(select(Engagement).where(Engagement.id == engagement_id))
-    eng = result.scalar_one_or_none()
-    if not eng:
-        raise HTTPException(status_code=404, detail="Engagement not found")
+    eng = await get_engagement_or_404(db, engagement_id, current_user)
     eng.status = "closed"
     db.add(AuditLog(
         project_id=eng.project_id,

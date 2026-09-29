@@ -1,5 +1,6 @@
 import { fireEvent, render, screen } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { aiAgentsApi } from '@/api/ai-agents';
 import { AgentMetricCard } from '@/components/ai-agents/agent-metric-card';
 import { AgentTable } from '@/components/ai-agents/agent-table';
 import { AgentStatusBadge, AgentTypeBadge } from '@/components/ai-agents/agent-badges';
@@ -39,5 +40,36 @@ describe('Generative AI automation components', () => {
     expect(pause).toBeTruthy();
     fireEvent.click(pause as Element);
     expect(onAction).toHaveBeenCalledWith('pause', expect.objectContaining({ status: 'Running' }));
+  });
+});
+
+describe('AI agents API', () => {
+  beforeEach(() => {
+    sessionStorage.clear();
+    localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('surfaces read failures instead of returning mock agents', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('backend unavailable')));
+
+    await expect(aiAgentsApi.getAgents()).rejects.toThrow('backend unavailable');
+  });
+
+  it('surfaces kill switch failures and uses only the session token', async () => {
+    sessionStorage.setItem('noovastack.token', 'session-token');
+    localStorage.setItem('noovastack.token', 'persistent-token');
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail: 'Kill switch denied' }), {
+      status: 503,
+      headers: { 'Content-Type': 'application/json' },
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(aiAgentsApi.activateKillSwitch('STOP ALL AGENTS')).rejects.toThrow('Kill switch denied');
+    const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(options.headers).get('Authorization')).toBe('Bearer session-token');
   });
 });

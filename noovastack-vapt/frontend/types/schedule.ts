@@ -8,6 +8,7 @@ export interface ScanSchedule {
   scan_depth: string;
   recurrence_rule: string;
   timezone: string;
+  cron_expression?: string | null;
   next_run_at?: string | null;
   status: string;
   created_at?: string;

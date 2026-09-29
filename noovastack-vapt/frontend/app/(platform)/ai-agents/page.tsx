@@ -1,14 +1,20 @@
 'use client';
 
 import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { z } from 'zod';
 import { AlertTriangle, Archive, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, Copy, FileText, History, Info, Loader2, Menu, MessageSquarePlus, MoreHorizontal, Paperclip, PauseCircle, Pin, RefreshCw, Search, Send, ShieldCheck, Sparkles, Trash2, Wrench, XCircle } from 'lucide-react';
 import { api, ApiError } from '@/lib/api-client';
 import { AgentToolRequestPanel } from '@/components/ai-agents/agent-tool-request-panel';
 import { useAuth } from '@/hooks/use-auth';
+import { useProjects } from '@/hooks/use-projects';
+import { useEngagements } from '@/hooks/use-engagements';
+import { useFinding, useFindings } from '@/hooks/use-findings';
+import { useAssets } from '@/hooks/use-assets';
+import { MarkdownItem, MarkdownLite } from '@/lib/markdown-lite';
 import type { User } from '@/types';
 
-const PRIMARY_MODEL = 'qwen3-coder:30b-64k';
+const PRIMARY_MODEL = 'deepseek-v4-flash';
 const HISTORY_KEY_PREFIX = 'noovastack.security.chatHistory';
 const MAX_INPUT = 12000;
 
@@ -63,10 +69,11 @@ const assistantContentSchema = z.object({
 type AssistantContent = z.infer<typeof assistantContentSchema>;
 type EvidenceItem = z.infer<typeof evidenceSchema>;
 type ChatMessage = { id: string; role: 'user' | 'assistant' | 'error'; content: string | AssistantContent; mode?: string; model?: string; createdAt: string; raw?: unknown; parserWarning?: string };
-type ChatSession = { id: string; title: string; mode: string; messages: ChatMessage[]; updatedAt: string; pinned?: boolean; archived?: boolean };
+type ChatSession = { id: string; title: string; mode: string; messages: ChatMessage[]; updatedAt: string; pinned?: boolean; archived?: boolean; contextProjectId?: string; contextEngagementId?: string; contextFindingId?: string };
+type ContextPatch = Partial<Pick<ChatSession, 'contextProjectId' | 'contextEngagementId' | 'contextFindingId'>>;
 type Health = { provider: string; model: string; context_window: string; deployment: string; available: boolean; status: string };
 
-const welcomeMessage: ChatMessage = { id: 'welcome', role: 'assistant', mode: 'general', model: PRIMARY_MODEL, createdAt: new Date().toISOString(), content: { type: 'plain', message: 'I can help review scan results, analyze evidence, improve findings, generate remediation, and draft report content using your local model. Select authorized context when available and keep human review in the approval path.', human_review_required: true } };
+const welcomeMessage: ChatMessage = { id: 'welcome', role: 'assistant', mode: 'general', model: PRIMARY_MODEL, createdAt: new Date().toISOString(), content: { type: 'plain', message: "Hi, I'm your AI pentesting copilot. Tell me about a target, a finding, or a fix you're working on — I'll help plan safely, triage evidence, and turn vulnerabilities into concrete remediation steps, the way a teammate on the assessment would. I explain and recommend; a human always makes the final call on scope, findings, and reports.", human_review_required: true } };
 
 export default function SecurityAssistantPage() {
   const { token, user, loading: authLoading } = useAuth();
@@ -101,7 +108,7 @@ export default function SecurityAssistantPage() {
   }, [historyKey]);
   useEffect(() => { saveChatHistory(historyKey, sessions); }, [historyKey, sessions]);
   useEffect(() => { if (activeSession) setMode(activeSession.mode); }, [activeSession?.id]);
-  useEffect(() => { if (!token) return; api.localAiHealth(token).then(setHealth).catch(() => setHealth({ provider: 'ollama', model: PRIMARY_MODEL, context_window: '64K', deployment: 'Local', available: false, status: 'unavailable' })); }, [token]);
+  useEffect(() => { if (!token) return; api.localAiHealth(token).then(setHealth).catch(() => setHealth({ provider: 'deepseek', model: PRIMARY_MODEL, context_window: '64K', deployment: 'Local', available: false, status: 'unavailable' })); }, [token]);
 
 
   async function sendMessage(event?: FormEvent, forcedText?: string) {
@@ -124,11 +131,11 @@ export default function SecurityAssistantPage() {
     const assistantMessage: ChatMessage = { id: assistantId, role: 'assistant', content: '__STREAMING__', mode, model: PRIMARY_MODEL, createdAt: new Date().toISOString() };
     updateActiveSession((session) => ({ ...session, messages: [...session.messages, assistantMessage], updatedAt: new Date().toISOString() }));
     try {
-      await api.localAiChatStream({ prompt: text, mode, model: PRIMARY_MODEL, conversation_id: activeSession.id }, token, abortRef.current.signal, (chunk) => {
+      await api.localAiChatStream({ prompt: text, mode, model: PRIMARY_MODEL, conversation_id: activeSession.id, project_id: activeSession.contextProjectId, engagement_id: activeSession.contextEngagementId, finding_id: activeSession.contextFindingId }, token, abortRef.current.signal, (chunk) => {
         if (chunk.type === 'token' && chunk.token) {
           streamingTextRef.current += chunk.token;
         } else if (chunk.type === 'error') {
-          throw new Error(chunk.error || 'Streaming failed');
+          throw new ApiError(502, chunk.error || 'The local AI stream failed.');
         }
       });
       const parsed = parseAssistantResponse(streamingTextRef.current);
@@ -138,8 +145,10 @@ export default function SecurityAssistantPage() {
       });
     } catch (error) {
       if ((error as Error).name === 'AbortError') return;
+      const errorMessage = getChatErrorText(error);
+      const errorKind = getChatErrorKind(error);
       updateActiveSession((session) => {
-        const messages = session.messages.map((message) => message.id === assistantId ? { ...message, content: { type: 'error', message: buildErrorMessage(error).content.message ?? 'Unable to display response. Try again.' } } : message);
+        const messages = session.messages.map((message) => message.id === assistantId ? { ...message, content: { type: 'error', status: errorKind, message: errorMessage } } : message);
         return { ...session, messages, updatedAt: new Date().toISOString() };
       });
     } finally {
@@ -156,6 +165,7 @@ export default function SecurityAssistantPage() {
   function patchSession(id: string, patch: Partial<ChatSession>) { setSessions((current) => sortSessions(current.map((item) => item.id === id ? { ...item, ...patch, updatedAt: new Date().toISOString() } : item))); }
   function clearContext() { setPrompt((current) => current ? `${current}\n\nContext cleared.` : 'Context cleared.'); }
   function retryLastMessage() { if (lastUserPromptRef.current) sendMessage(undefined, lastUserPromptRef.current); }
+  function setSessionContext(patch: ContextPatch) { updateActiveSession((session) => ({ ...session, ...patch, updatedAt: new Date().toISOString() })); }
 
   return (
     <main className="min-h-[calc(100vh-88px)] bg-[var(--bg)] text-[var(--text)]">
@@ -163,12 +173,12 @@ export default function SecurityAssistantPage() {
       <div className="flex h-[calc(100dvh-88px)] overflow-hidden rounded-none sm:rounded-3xl">
         <ConversationSidebar sessions={sessions} activeId={activeId} search={search} setSearch={setSearch} setActiveId={setActiveId} startNewChat={startNewChat} renameSession={renameSession} deleteSession={deleteSession} patchSession={patchSession} mobileOpen={showHistory} onClose={() => setShowHistory(false)} />
         <section className="flex min-w-0 flex-1 flex-col bg-[var(--bg)]">
-          <ConversationHeader mode={activeMode.label} onOpenHistory={() => setShowHistory(true)} onNewChat={startNewChat} onOpenToolRequest={() => setToolRequestOpen(true)} health={health} />
+          <ConversationHeader mode={activeMode.label} onOpenHistory={() => setShowHistory(true)} onNewChat={startNewChat} onOpenToolRequest={() => setToolRequestOpen(true)} health={health} session={activeSession} onContextChange={setSessionContext} />
           <AgentModeSelector mode={mode} setMode={changeMode} />
-          <ChatMessageList messages={activeSession.messages} loading={loading} mode={activeMode.label} onUsePrompt={setPrompt} onRetry={retryLastMessage} />
+          <ChatMessageList messages={activeSession.messages} loading={loading} mode={activeMode.label} user={user} onUsePrompt={setPrompt} onRetry={retryLastMessage} />
           <ChatComposer value={prompt} setValue={setPrompt} onSubmit={sendMessage} onStop={stopGeneration} loading={loading} disabled={!authorizationAvailable} authLoading={authLoading} />
         </section>
-        <ContextPanelRail open={showContext} onToggle={() => setShowContext((v) => !v)} health={health} />
+        <ContextPanelRail open={showContext} onToggle={() => setShowContext((v) => !v)} health={health} session={activeSession} />
       </div>
       <AgentToolRequestPanel open={toolRequestOpen} onClose={() => setToolRequestOpen(false)} />
     </main>
@@ -239,23 +249,79 @@ function ConversationListItem({ session, active, onSelect, onRename, onDelete, o
   );
 }
 
-function ConversationHeader({ mode, onOpenHistory, onNewChat, onOpenToolRequest, health }: { mode: string; onOpenHistory: () => void; onNewChat: () => void; onOpenToolRequest: () => void; health: Health | null }) {
+function ConversationHeader({ mode, onOpenHistory, onNewChat, onOpenToolRequest, health, session, onContextChange }: { mode: string; onOpenHistory: () => void; onNewChat: () => void; onOpenToolRequest: () => void; health: Health | null; session: ChatSession; onContextChange: (patch: ContextPatch) => void }) {
   return (
     <header className="bg-[var(--bg)] px-4 py-3 lg:px-6">
       <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
         <div className="flex items-center gap-2 min-w-0">
           <button className="lg:hidden text-[var(--text)]" onClick={onOpenHistory}><Menu className="h-5 w-5" /></button>
           <h1 className="text-[16px] font-bold text-[var(--text)]">NoovaStack Security Assistant</h1>
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${health?.available ? 'bg-[var(--success)]/15 text-[var(--success)]' : 'bg-[var(--warn)]/15 text-[var(--warn)]'}`}>{health?.available ? 'Connected' : 'Checking'}</span>
+          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${health?.available ? 'bg-[var(--success)]/15 text-[var(--success)]' : health ? 'bg-[var(--danger)]/15 text-[var(--danger)]' : 'bg-[var(--warn)]/15 text-[var(--warn)]'}`}>{health?.available ? 'Connected' : health ? 'Unavailable' : 'Checking'}</span>
         </div>
         <div className="flex flex-wrap gap-2">
           <HeaderButton onClick={onOpenToolRequest} label="Request Tool" icon={Wrench} />
           <HeaderButton onClick={onNewChat} label="New Chat" />
-          <HeaderButton onClick={() => undefined} label="Select Context" />
-          <HeaderButton onClick={() => undefined} label="View Details" />
+          <Link href="/ai-agents/runs"><HeaderButton onClick={() => undefined} label="Autonomous" icon={Bot} /></Link>
+          <ContextSelectorPanel session={session} onChange={onContextChange} />
         </div>
       </div>
     </header>
+  );
+}
+
+function ContextSelectorPanel({ session, onChange }: { session: ChatSession; onChange: (patch: ContextPatch) => void }) {
+  const [open, setOpen] = useState(false);
+  const { data: projects } = useProjects();
+  const { data: engagements } = useEngagements(session.contextProjectId);
+  const { data: findings } = useFindings(session.contextProjectId ? `?project_id=${session.contextProjectId}` : '');
+  const selectedProject = projects?.find((p) => p.id === session.contextProjectId);
+  const hasSelection = Boolean(session.contextProjectId || session.contextEngagementId || session.contextFindingId);
+
+  return (
+    <div className="relative">
+      <HeaderButton onClick={() => setOpen((v) => !v)} label={selectedProject ? selectedProject.name : 'Select Context'} icon={hasSelection ? ShieldCheck : undefined} />
+      {open ? (
+        <>
+          <button aria-label="Close context selector" className="fixed inset-0 z-40 cursor-default" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-[calc(100%+6px)] z-50 w-[260px] rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 shadow-xl">
+            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">Scope this chat</p>
+            <div className="space-y-2">
+              <ContextField label="Project">
+                <select value={session.contextProjectId ?? ''} onChange={(e) => onChange({ contextProjectId: e.target.value || undefined, contextEngagementId: undefined, contextFindingId: undefined })} className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]/50">
+                  <option value="">No project selected</option>
+                  {projects?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+                </select>
+              </ContextField>
+              <ContextField label="Engagement">
+                <select value={session.contextEngagementId ?? ''} disabled={!session.contextProjectId} onChange={(e) => onChange({ contextEngagementId: e.target.value || undefined })} className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-50">
+                  <option value="">No engagement selected</option>
+                  {engagements?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+              </ContextField>
+              <ContextField label="Finding">
+                <select value={session.contextFindingId ?? ''} disabled={!session.contextProjectId} onChange={(e) => onChange({ contextFindingId: e.target.value || undefined })} className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-50">
+                  <option value="">No finding selected</option>
+                  {findings?.map((f) => <option key={f.id} value={f.id}>{f.title}</option>)}
+                </select>
+              </ContextField>
+            </div>
+            <div className="mt-3 flex items-center justify-between">
+              <button type="button" disabled={!hasSelection} onClick={() => onChange({ contextProjectId: undefined, contextEngagementId: undefined, contextFindingId: undefined })} className="text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40">Clear</button>
+              <button type="button" onClick={() => setOpen(false)} className="rounded-lg bg-[var(--accent)] px-3 py-1 text-[11px] font-semibold text-white hover:bg-[var(--accent-hover)]">Done</button>
+            </div>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+function ContextField({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label className="block">
+      <span className="mb-1 block text-[10px] font-medium text-[var(--muted)]">{label}</span>
+      {children}
+    </label>
   );
 }
 
@@ -275,7 +341,7 @@ function AgentModeSelector({ mode, setMode }: { mode: string; setMode: (mode: st
   );
 }
 
-function ChatMessageList({ messages, loading, mode, onUsePrompt, onRetry }: { messages: ChatMessage[]; loading: boolean; mode: string; onUsePrompt: (value: string) => void; onRetry: () => void }) {
+function ChatMessageList({ messages, loading, mode, user, onUsePrompt, onRetry }: { messages: ChatMessage[]; loading: boolean; mode: string; user: User | null; onUsePrompt: (value: string) => void; onRetry: () => void }) {
   const nearEmpty = messages.length <= 1;
   const groups = useMemo(() => groupMessages(messages), [messages]);
   return (
@@ -283,7 +349,7 @@ function ChatMessageList({ messages, loading, mode, onUsePrompt, onRetry }: { me
       <div className="mx-auto max-w-[900px] space-y-[14px]">
         {nearEmpty ? <AssistantEmptyState onUsePrompt={onUsePrompt} /> : groups.map((group, groupIndex) => {
           if (group.role === 'user') {
-            return <UserMessageGroup key={group.id} messages={group.messages} />;
+            return <UserMessageGroup key={group.id} messages={group.messages} user={user} />;
           }
           if (group.role === 'error') {
             return group.messages.map((message) => <ErrorMessage key={message.id} message={message} />);
@@ -297,7 +363,7 @@ function ChatMessageList({ messages, loading, mode, onUsePrompt, onRetry }: { me
 }
 
 function AssistantEmptyState({ onUsePrompt }: { onUsePrompt: (value: string) => void }) {
-  const prompts = ['Create a safe assessment plan', 'Review a finding', 'Suggest remediation', 'Write a report summary', 'Explain required evidence'];
+  const prompts = ['Plan a safe assessment', 'Review a finding for me', 'How do I fix this vulnerability?', 'Draft a report summary', 'What evidence do I need?'];
   const visible = prompts.slice(0, 3);
   const more = prompts.length - visible.length;
   return (
@@ -306,8 +372,8 @@ function AssistantEmptyState({ onUsePrompt }: { onUsePrompt: (value: string) => 
         <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-[var(--surface-2)] text-[var(--accent)] shadow-[var(--shadow)]">
           <Bot className="h-6 w-6" />
         </div>
-        <h2 className="text-xl font-semibold text-[var(--text)]">NoovaStack Security Assistant</h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--muted)]">Plan authorized assessments, review findings, and draft report content with local AI.</p>
+        <h2 className="text-xl font-semibold text-[var(--text)]">Hi — what are we working on today?</h2>
+        <p className="mt-2 text-sm leading-6 text-[var(--muted)]">Think of me as a pentester on your team: I plan safe assessments, triage findings, and turn vulnerabilities into clear, actionable fixes.</p>
       </div>
       <div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">
         {visible.map((prompt) => <button key={prompt} onClick={() => onUsePrompt(prompt)} className="inline-flex items-center gap-2 rounded-[20px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[5px] text-[12px] font-medium text-[var(--text)] transition hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"><Sparkles className="h-[13px] w-[13px]" />{prompt}</button>)}
@@ -317,15 +383,18 @@ function AssistantEmptyState({ onUsePrompt }: { onUsePrompt: (value: string) => 
   );
 }
 
-function UserMessageGroup({ messages }: { messages: ChatMessage[] }) {
+function UserMessageGroup({ messages, user }: { messages: ChatMessage[]; user: User | null }) {
   return (
-    <div className="flex justify-end">
+    <div className="flex items-end justify-end gap-2">
       <div className="flex max-w-[78%] flex-col items-end gap-[4px]">
         {messages.map((message, index) => (
           <div key={message.id} className={`rounded-[14px] bg-[var(--accent)] px-[13px] py-[9px] text-[13px] leading-[1.55] text-white shadow-[var(--shadow)] ${index === messages.length - 1 ? 'rounded-br-[4px]' : ''} ${index === 0 ? 'rounded-tr-[14px]' : ''}`}>
             <div className="whitespace-pre-wrap break-words">{typeof message.content === 'string' ? message.content : '[User input]'}</div>
           </div>
         ))}
+      </div>
+      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[var(--accent)] text-[11px] font-bold text-white shadow-[var(--shadow)]" title={displayName(user)}>
+        {getInitials(displayName(user))}
       </div>
     </div>
   );
@@ -411,7 +480,7 @@ function PlainTextMessage({ content }: { content: AssistantContent }) {
   const statusType = status === 'Rejected' || status === 'rejected' ? 'rejected' : status === 'Accepted' || status === 'accepted' || status === 'Verified' || status === 'verified' ? 'success' : content.warnings?.length ? 'warning' : undefined;
   return (
     <div className="space-y-2">
-      <p className="whitespace-pre-wrap text-[13px] leading-[1.5] text-[var(--text)]">{content.message ?? content.summary ?? ''}</p>
+      <div className="text-[var(--text)]"><MarkdownLite text={content.message ?? content.summary ?? ''} /></div>
       {statusType ? <CompactStatusCard status={statusType} message={content.message ?? content.summary ?? ''} warnings={content.warnings} /> : null}
     </div>
   );
@@ -460,7 +529,7 @@ function RemediationCard({ content, onToggleRaw }: { content: AssistantContent; 
   const r = content.remediation;
   return (
     <CompactStructuredCard title="Remediation Draft" icon={ShieldCheck} status="success" onToggleRaw={onToggleRaw}>
-      <p className="text-[13px]">{r?.issue_summary}</p>
+      {r?.issue_summary ? <MarkdownLite text={r.issue_summary} /> : null}
       <List title="Immediate Mitigation" items={r?.immediate_mitigation} />
       <List title="Long-Term Remediation" items={r?.long_term_remediation} />
       <List title="Verification Steps" items={r?.verification_steps} />
@@ -551,17 +620,44 @@ function SuggestionChips({ mode, onUse }: { mode: string; onUse: (v: string) => 
   );
 }
 
-function ContextPanelRail({ open, onToggle, health }: { open: boolean; onToggle: () => void; health: Health | null }) {
+function ContextPanelRail({ open, onToggle, health, session }: { open: boolean; onToggle: () => void; health: Health | null; session: ChatSession }) {
   const [hovered, setHovered] = useState(false);
   const expanded = open || hovered;
+  const { data: projects } = useProjects();
+  const { data: engagements } = useEngagements(session.contextProjectId);
+  const { data: finding } = useFinding(session.contextFindingId ?? '');
+  const { data: assets } = useAssets(session.contextProjectId);
+
+  const project = projects?.find((p) => p.id === session.contextProjectId);
+  const engagement = engagements?.find((e) => e.id === session.contextEngagementId);
+  const approvedInScope = assets?.filter((a) => a.scope_status === 'in_scope' && a.approval_status === 'approved') ?? [];
+
+  const authorization = !engagement
+    ? { value: 'Authorization needed before testing', status: 'empty' as const }
+    : engagement.authorization_status === 'authorized'
+    ? { value: 'Engagement authorized', status: 'ok' as const }
+    : { value: `Not authorized (${humanize(engagement.authorization_status)})`, status: 'blocked' as const };
+
+  const scope = !session.contextProjectId
+    ? { value: 'Scope protection is active', status: 'ok' as const }
+    : approvedInScope.length > 0
+    ? { value: `${approvedInScope.length} approved in-scope asset${approvedInScope.length === 1 ? '' : 's'}`, status: 'ok' as const }
+    : { value: 'No approved in-scope assets in this project yet', status: 'blocked' as const };
+
+  const testingWindow = !engagement
+    ? { value: 'Testing window must be confirmed', status: 'empty' as const }
+    : engagement.testing_window_start && engagement.testing_window_end
+    ? { value: `${formatDate(engagement.testing_window_start)} – ${formatDate(engagement.testing_window_end)}`, status: 'ok' as const }
+    : { value: 'Testing window not set for this engagement', status: 'blocked' as const };
+
   const items = [
-    { label: 'Project', value: 'No project context selected', status: 'empty' as const },
-    { label: 'Engagement', value: 'Not selected', status: 'empty' as const },
+    { label: 'Project', value: project?.name ?? 'No project context selected', status: project ? 'ok' as const : 'empty' as const },
+    { label: 'Engagement', value: engagement?.name ?? 'Not selected', status: engagement ? 'ok' as const : 'empty' as const },
     { label: 'Scan', value: 'Not selected', status: 'empty' as const },
-    { label: 'Finding', value: 'Not selected', status: 'empty' as const },
-    { label: 'Authorization', value: 'Authorization needed before testing', status: 'blocked' as const },
-    { label: 'Scope', value: 'Scope protection is active', status: 'ok' as const },
-    { label: 'Testing window', value: 'Testing window must be confirmed', status: 'empty' as const },
+    { label: 'Finding', value: finding?.title ?? 'Not selected', status: finding ? 'ok' as const : 'empty' as const },
+    { label: 'Authorization', ...authorization },
+    { label: 'Scope', ...scope },
+    { label: 'Testing window', ...testingWindow },
     { label: 'Model', value: health?.model ?? PRIMARY_MODEL, status: health?.available ? 'ok' as const : 'blocked' as const },
     { label: 'Health', value: health?.available ? 'Connected' : 'Unavailable', status: health?.available ? 'ok' as const : 'blocked' as const },
   ];
@@ -614,8 +710,8 @@ function ChatComposer({ value, setValue, onSubmit, onStop, loading, disabled, au
     <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className="bg-[var(--bg)] p-[18px]">
       <div className="mx-auto max-w-[900px] overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">
         <div className="flex items-center gap-1 border-b border-[var(--border)] px-2.5 py-1.5">
-          <ComposerToolbarButton label="Attach" icon={Paperclip} onClick={() => undefined} />
-          <ComposerToolbarButton label="Reference" icon={FileText} onClick={() => undefined} />
+          <ComposerToolbarButton label="Attach" icon={Paperclip} onClick={() => undefined} disabled title="Coming soon — attach a file to this message." />
+          <ComposerToolbarButton label="Reference" icon={FileText} onClick={() => undefined} disabled title="Coming soon — reference a project, finding, or evidence item." />
           <ComposerToolbarButton label="Clear" icon={Trash2} onClick={() => setValue('')} danger />
         </div>
         <div className="flex items-end gap-2 px-2.5 pb-2 pt-2">
@@ -623,7 +719,7 @@ function ChatComposer({ value, setValue, onSubmit, onStop, loading, disabled, au
           {loading ? (
             <button type="button" onClick={onStop} className="grid h-8 w-8 place-items-center rounded-[10px] border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface-2)]"><PauseCircle className="h-4 w-4" /></button>
           ) : (
-            <button type="submit" disabled={disabled || !value.trim()} className="grid h-8 w-8 place-items-center rounded-[10px] bg-[var(--accent)] text-white disabled:opacity-50"><Send className="h-4 w-4" /></button>
+            <button type="submit" aria-label="Send" disabled={disabled || !value.trim()} className="grid h-8 w-8 place-items-center rounded-[10px] bg-[var(--accent)] text-white disabled:opacity-50"><Send className="h-4 w-4" /></button>
           )}
         </div>
         <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-[var(--light)]">
@@ -634,9 +730,9 @@ function ChatComposer({ value, setValue, onSubmit, onStop, loading, disabled, au
   );
 }
 
-function ComposerToolbarButton({ label, icon: Icon, onClick, danger }: { label: string; icon: typeof Paperclip; onClick: () => void; danger?: boolean }) {
+function ComposerToolbarButton({ label, icon: Icon, onClick, danger, disabled, title }: { label: string; icon: typeof Paperclip; onClick: () => void; danger?: boolean; disabled?: boolean; title?: string }) {
   return (
-    <button type="button" onClick={onClick} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition hover:bg-[var(--surface-2)] ${danger ? 'ml-auto text-[var(--danger)] hover:bg-[var(--danger-bg)]' : 'text-[var(--muted)]'}`}>
+    <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} title={title} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-[var(--surface-2)]'} ${danger ? 'ml-auto text-[var(--danger)] hover:bg-[var(--danger-bg)]' : 'text-[var(--muted)]'}`}>
       <Icon className="h-3.5 w-3.5" />
       {label}
     </button>
@@ -645,14 +741,35 @@ function ComposerToolbarButton({ label, icon: Icon, onClick, danger }: { label: 
 
 function parseAssistantResponse(value: unknown): { content: AssistantContent; warning?: string } {
   if (typeof value === 'string') {
-    const rawText = value;
-    try { value = JSON.parse(rawText); } catch {
-      return { content: { type: 'plain', message: rawText, warnings: ['Malformed JSON. Displayed as plain text.'], human_review_required: true }, warning: 'Malformed JSON. Displayed as plain text.' };
+    const rawText = stripMarkdownFence(value.trim());
+    if (rawText.startsWith('{') || rawText.startsWith('[')) {
+      try {
+        value = JSON.parse(rawText);
+      } catch {
+        return { content: { type: 'plain', message: rawText || 'The model returned an empty response.', human_review_required: true } };
+      }
+    } else {
+      return { content: { type: 'plain', message: rawText || 'The model returned an empty response.', human_review_required: true } };
     }
   }
   const parsed = assistantContentSchema.safeParse(value);
-  if (!parsed.success) return { content: { type: 'plain', message: typeof value === 'object' ? JSON.stringify(value) : String(value), warnings: ['Unexpected response shape. Displayed safely as text.'], human_review_required: true }, warning: 'Unexpected response shape.' };
+  if (!parsed.success) {
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      const row = value as Record<string, unknown>;
+      const message = typeof row.message === 'string' ? row.message : typeof row.content === 'string' ? row.content : typeof row.text === 'string' ? row.text : '';
+      if (message) return { content: { type: 'plain', message, human_review_required: Boolean(row.human_review_required) }, warning: 'Structured response normalized to plain text.' };
+    }
+    return { content: { type: 'plain', message: typeof value === 'object' ? JSON.stringify(value) : String(value), human_review_required: true }, warning: 'Unexpected response shape. Displayed safely as text.' };
+  }
   return { content: parsed.data };
+}
+
+function stripMarkdownFence(text: string): string {
+  const trimmed = text.trim();
+  if (trimmed.startsWith('```')) {
+    return trimmed.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '').trim();
+  }
+  return trimmed;
 }
 
 function normalizeChatResponse(response: unknown) {
@@ -670,17 +787,44 @@ function normalizeChatResponse(response: unknown) {
 
 function buildAuthErrorMessage(): ChatMessage { return { id: `auth-${Date.now()}`, role: 'error', content: { type: 'error', message: 'Your secure session is not ready. Refresh the page or sign in again before sending a local AI request.', human_review_required: true }, createdAt: new Date().toISOString() }; }
 function buildErrorMessage(error: unknown): ChatMessage {
-  let message = `The local ${PRIMARY_MODEL} model is currently unavailable. Check the Ollama service and model health, then retry.`;
-  if (error instanceof ApiError) message = error.detail.includes('timeout') ? 'Request timeout while waiting for the local model. Reduce context size or retry.' : error.detail;
+  const message = getChatErrorText(error);
   return { id: `err-${Date.now()}`, role: 'error', content: { type: 'error', message, human_review_required: true }, createdAt: new Date().toISOString() };
 }
 
+function getChatErrorText(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.status === 401 || error.status === 403) return 'Your secure session is no longer authorized. Sign in again and retry.';
+    if (error.status === 503) return error.detail || `The local ${PRIMARY_MODEL} model is unavailable.`;
+    return error.detail.toLowerCase().includes('timeout') ? 'Request timeout while waiting for the local model. Reduce context size or retry.' : error.detail;
+  }
+  if (error instanceof TypeError) return 'Cannot reach the NoovaStack AI API. Check that the backend service is running and reachable.';
+  return error instanceof Error && error.message ? error.message : 'The local AI request failed unexpectedly.';
+}
+
+function getChatErrorKind(error: unknown) {
+  if (error instanceof ApiError) {
+    if (error.status === 401 || error.status === 403) return 'authorization';
+    if (error.status === 503) return 'provider_unavailable';
+    if (error.status === 502 || error.status === 504 || error.detail.toLowerCase().includes('timeout')) return 'provider_error';
+    return 'request_error';
+  }
+  return error instanceof TypeError ? 'network_error' : 'response_error';
+}
+
 function ErrorMessageCard({ content, onRetry }: { content: AssistantContent; onRetry: () => void }) {
+  const title = {
+    authorization: 'Authorization required',
+    provider_unavailable: 'Local AI unavailable',
+    provider_error: 'Local AI provider error',
+    network_error: 'AI API unreachable',
+    request_error: 'AI request failed',
+    response_error: 'Unable to process response',
+  }[content.status ?? ''] ?? 'AI request failed';
   return (
     <div className="rounded-xl border border-[var(--danger)]/30 bg-[var(--danger-bg)] p-3 text-sm">
       <div className="flex items-center gap-2">
         <AlertTriangle className="h-4 w-4 text-[var(--danger)] flex-shrink-0" />
-        <strong className="text-[var(--danger)]">Unable to display response</strong>
+        <strong className="text-[var(--danger)]">{title}</strong>
       </div>
       <p className="mt-1.5 text-[var(--text)]">{content.message ?? 'The model returned a response that could not be parsed.'}</p>
       <button onClick={onRetry} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--danger)]/30 bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-2)]">
@@ -696,7 +840,7 @@ function GenericStructuredCard({ content, onToggleRaw }: { content: AssistantCon
   const fields = Object.entries(content as Record<string, unknown>).filter(([k]) => !['type', 'message', 'summary', 'title', 'name', 'body', 'warnings', 'human_review_required'].includes(k));
   return (
     <CompactStructuredCard title={String(title)} icon={Info} status="success" onToggleRaw={onToggleRaw}>
-      <p className="text-[13px] leading-[1.5]">{String(message)}</p>
+      <MarkdownLite text={String(message)} />
       {fields.length > 0 ? <InfoGrid rows={fields.map(([k, v]) => [k, String(v ?? '')])} /> : null}
     </CompactStructuredCard>
   );
@@ -738,7 +882,7 @@ function InfoGrid({ rows }: { rows: Array<[string, string | undefined]> }) {
 }
 
 function List({ title, items }: { title: string; items?: string[] }) {
-  return items?.length ? <div><p className="text-xs font-semibold text-[var(--muted)]">{title}</p><ul className="mt-1 list-disc space-y-0.5 pl-4 text-xs text-[var(--muted)]">{items.map((item) => <li key={item}>{item}</li>)}</ul></div> : null;
+  return items?.length ? <div><p className="text-xs font-semibold text-[var(--muted)]">{title}</p><ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-[var(--text)]">{items.map((item) => <li key={item}><MarkdownItem text={item} /></li>)}</ul></div> : null;
 }
 
 function CardActions({ actions }: { actions: string[] }) {
@@ -746,12 +890,12 @@ function CardActions({ actions }: { actions: string[] }) {
 }
 
 function InfoBlock({ label, value }: { label: string; value?: string }) {
-  return value ? <div className="rounded-lg bg-[var(--bg)] p-2 text-xs"><p className="mb-0.5 text-[10px] font-semibold text-[var(--muted)]">{label}</p><p className="whitespace-pre-wrap text-[var(--text)]">{value}</p></div> : null;
+  return value ? <div className="rounded-lg bg-[var(--bg)] p-2 text-xs"><p className="mb-0.5 text-[10px] font-semibold text-[var(--muted)]">{label}</p><MarkdownLite text={value} /></div> : null;
 }
 
-function HeaderButton({ label, onClick, icon: Icon }: { label: string; onClick: () => void; icon?: typeof Wrench }) {
+function HeaderButton({ label, onClick, icon: Icon, disabled, title }: { label: string; onClick: () => void; icon?: typeof Wrench; disabled?: boolean; title?: string }) {
   return (
-    <button onClick={onClick} className="inline-flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[12px] font-semibold text-[var(--text)] hover:border-[var(--accent)]/40 hover:text-[var(--accent)]">
+    <button onClick={disabled ? undefined : onClick} disabled={disabled} title={title} className={`inline-flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[12px] font-semibold text-[var(--text)] ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:border-[var(--accent)]/40 hover:text-[var(--accent)]'}`}>
       {Icon ? <Icon className="h-4 w-4" /> : null}{label}
     </button>
   );
@@ -781,6 +925,12 @@ function StatusText({ status }: { status: string }) {
 function createChatSession(): ChatSession { return { id: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title: 'New assessment chat', mode: 'general', messages: [welcomeMessage], updatedAt: new Date().toISOString() }; }
 function getUserHistoryKey(user: User | null) { return `${HISTORY_KEY_PREFIX}.${user?.id ?? user?.email ?? 'anonymous'}`; }
 function displayName(user: User | null) { return user?.full_name || user?.username || user?.email || 'Signed-in user'; }
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 function loadChatHistory(key: string): ChatSession[] { if (typeof window === 'undefined') return []; try { const raw = sessionStorage.getItem(key) || localStorage.getItem(key); const rows = raw ? JSON.parse(raw) as ChatSession[] : []; return sortSessions(Array.isArray(rows) ? rows.filter((row) => row.id && row.messages?.length) : []); } catch { return []; } }
 function saveChatHistory(key: string, sessions: ChatSession[]) { if (typeof window === 'undefined') return; const value = JSON.stringify(sessions); sessionStorage.setItem(key, value); localStorage.setItem(key, value); }
 function useDeviceClass() { const [device, setDevice] = useState('desktop'); useEffect(() => { const update = () => setDevice(window.innerWidth < 640 ? 'phone' : window.innerWidth < 1024 ? 'tablet' : 'desktop'); update(); window.addEventListener('resize', update); return () => window.removeEventListener('resize', update); }, []); return device; }
@@ -790,6 +940,7 @@ function startOfDay(date: Date) { return new Date(date.getFullYear(), date.getMo
 function makeTitle(value: string) { return value.length > 36 ? `${value.slice(0, 36)}...` : value; }
 function labelForMode(value: string) { return modes.find((item) => item.id === value)?.label ?? value; }
 function formatTime(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? 'now' : date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); }
+function formatDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
 function humanize(value: string) { return value.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()); }
 function sanitizeParams(params: Record<string, unknown>) { const blocked = /password|token|cookie|secret|authorization/i; return Object.fromEntries(Object.entries(params).map(([key, value]) => [key, blocked.test(key) ? '[redacted]' : value])); }
 

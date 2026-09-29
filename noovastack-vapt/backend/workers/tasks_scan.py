@@ -20,6 +20,11 @@ if str(APP_ROOT) not in sys.path:
 
 logger = logging.getLogger(__name__)
 
+MODULE_TOOL_ALIASES = {
+    "tls_services": "sslscan",
+    "dependency_scan": "pip_audit",
+}
+
 
 @shared_task(name="workers.tasks_scan.run_scan", bind=True)
 def run_scan(self, scan_id: str):
@@ -39,10 +44,9 @@ def run_scan(self, scan_id: str):
 
 async def _execute_scan(scan_id: str) -> dict:
     from database import AsyncSessionLocal
-    from database.models import Scan, ScanModule, ScanAsset, Asset, Finding
+    from database.models import Approval, Asset, AuditLog, Engagement, Scan, ScanAsset, ScanModule, ScanProfile
     from safety import SafetyContext, is_safe
     from sqlalchemy import select
-    import uuid as uuid_lib
 
     async with AsyncSessionLocal() as session:
         result = await session.execute(select(Scan).where(Scan.id == scan_id))
@@ -50,20 +54,96 @@ async def _execute_scan(scan_id: str) -> dict:
         if not scan:
             return {"status": "error", "message": "Scan not found"}
 
-        # Safety check
-        safe, reasons = is_safe(SafetyContext(
-            scan_id=scan_id,
-            project_id=str(scan.project_id),
-            assessment_mode=scan.assessment_mode,
-            scan_depth=scan.scan_depth,
-            target=(scan.config or {}).get("target", "approved_project_assets"),
-            is_approved=scan.approved_by is not None,
-            metadata={"authorized_internal": bool((scan.config or {}).get("safe_only"))},
-        ))
-        if not safe:
+        scan_asset_result = await session.execute(
+            select(ScanAsset).where(ScanAsset.scan_id == scan_id)
+        )
+        scan_assets = list(scan_asset_result.scalars().all())
+        asset_ids = [item.asset_id for item in scan_assets]
+        assets = []
+        if asset_ids:
+            asset_result = await session.execute(select(Asset).where(Asset.id.in_(asset_ids)))
+            assets = list(asset_result.scalars().all())
+
+        reasons = []
+        if not scan_assets:
+            reasons.append("Select at least one approved in-scope asset.")
+        if len(assets) != len(set(asset_ids)):
+            reasons.append("One or more selected assets do not exist.")
+        for asset in assets:
+            if asset.project_id != scan.project_id:
+                reasons.append(f"Asset {asset.value} does not belong to the scan project.")
+            if asset.scope_status != "in_scope" or asset.approval_status != "approved":
+                reasons.append(f"Asset {asset.value} is not approved and in scope.")
+
+        engagement = None
+        if scan.engagement_id:
+            engagement_result = await session.execute(
+                select(Engagement).where(Engagement.id == scan.engagement_id)
+            )
+            engagement = engagement_result.scalar_one_or_none()
+            if not engagement or engagement.project_id != scan.project_id:
+                reasons.append("Selected engagement does not exist in the scan project.")
+            elif engagement.authorization_status != "authorized":
+                reasons.append("Selected engagement is not authorized.")
+            elif engagement.end_date and engagement.end_date < datetime.utcnow():
+                reasons.append("Selected engagement authorization is expired.")
+
+        profile = None
+        if scan.scan_profile_id:
+            profile_result = await session.execute(
+                select(ScanProfile).where(ScanProfile.id == scan.scan_profile_id)
+            )
+            profile = profile_result.scalar_one_or_none()
+            if not profile or not profile.enabled:
+                reasons.append("Selected scan profile is not enabled.")
+
+        approval_result = await session.execute(
+            select(Approval).where(Approval.scan_id == scan.id, Approval.status == "approved")
+        )
+        approvals = [
+            approval for approval in approval_result.scalars().all()
+            if approval.approved_by
+            and (not approval.expires_at or approval.expires_at > datetime.utcnow())
+        ]
+        is_approved = bool(approvals)
+        approval_required = True  # Every scan requires Security Team approval before it can run.
+        if approval_required and not is_approved:
+            reasons.append("Required scan approval has not been granted or has expired.")
+
+        prohibited_actions = {
+            "denial_of_service", "brute_force", "credential_theft", "malware",
+            "persistent_access", "data_exfiltration", "production_data_modification",
+            "unauthorized_pivoting",
+        }
+        selected_actions = set((scan.config or {}).get("advanced_options") or [])
+        blocked_actions = sorted(selected_actions.intersection(prohibited_actions))
+        if blocked_actions:
+            reasons.append("Prohibited actions selected: " + ", ".join(blocked_actions))
+
+        for asset in assets:
+            safe, asset_reasons = is_safe(SafetyContext(
+                scan_id=scan_id,
+                project_id=str(scan.project_id),
+                engagement_id=str(scan.engagement_id) if scan.engagement_id else None,
+                assessment_mode=scan.assessment_mode,
+                scan_depth=scan.scan_depth,
+                target=str(asset.value),
+                testing_window_start=engagement.testing_window_start if engagement else None,
+                testing_window_end=engagement.testing_window_end if engagement else None,
+                is_approved=is_approved,
+                scope_is_approved=(
+                    asset.project_id == scan.project_id
+                    and asset.scope_status == "in_scope"
+                    and asset.approval_status == "approved"
+                ),
+            ))
+            if not safe:
+                reasons.extend(f"{asset.value}: {reason}" for reason in asset_reasons)
+
+        if reasons:
             scan.status = "blocked"
             await session.commit()
-            return {"status": "blocked", "reasons": reasons}
+            return {"status": "blocked", "reasons": list(dict.fromkeys(reasons))}
 
         scan.status = "running"
         scan.started_at = datetime.utcnow()
@@ -84,21 +164,6 @@ async def _execute_scan(scan_id: str) -> dict:
             await session.flush()
 
         total_modules = len(modules)
-        scan_assets = await session.execute(
-            select(ScanAsset).where(ScanAsset.scan_id == scan_id)
-        )
-        asset_ids = [sa.asset_id for sa in scan_assets.scalars().all()]
-
-        if not asset_ids:
-            scan_assets_all = await session.execute(
-                select(Asset).where(
-                    Asset.project_id == scan.project_id,
-                    Asset.scope_status == "in_scope",
-                )
-            )
-            for a in scan_assets_all.scalars().all():
-                asset_ids.append(a.id)
-
         # Execute modules
         completed = 0
         for module in modules:
@@ -121,14 +186,22 @@ async def _execute_scan(scan_id: str) -> dict:
             scan.progress = int((completed / total_modules) * 100)
             await session.commit()
 
-        # Keep real safe scans evidence-based. Demo findings are only for scans
-        # without a safe real target configuration.
-        if not (scan.config or {}).get("safe_only"):
-            await _generate_sample_findings(session, scan_id, asset_ids)
-
         scan.status = "completed"
         scan.completed_at = datetime.utcnow()
         scan.progress = 100
+        session.add(AuditLog(
+            project_id=scan.project_id,
+            scan_id=scan.id,
+            actor_id=scan.requested_by,
+            event_type="scan",
+            action="scan_completed",
+            details={
+                "modules_completed": completed,
+                "total_modules": total_modules,
+                "total_findings": (scan.results_summary or {}).get("total_findings"),
+                "message": "Scan completed. The report is ready to view and export.",
+            },
+        ))
         await session.commit()
 
         return {
@@ -151,7 +224,7 @@ async def _run_module(module_name: str, scan, asset_ids, session) -> dict:
         results = await _run_service_discovery(module_name, scan, asset_ids, session)
     elif module_name in ("wapiti_scan", "wapiti", "owasp_top_10"):
         results = await _run_wapiti_scan(module_name, scan, asset_ids, session)
-    elif module_name in ("basic_scan", "http_probe", "security_headers", "tls_check", "safe_nuclei_templates", "nuclei_templates", "technology_detection"):
+    elif module_name in ("basic_scan", "http_probe", "security_headers", "tls_check", "safe_nuclei_templates", "technology_detection"):
         observations = []
         async with httpx.AsyncClient(timeout=10.0, follow_redirects=False, trust_env=False) as client:
             for asset_id in asset_ids:
@@ -291,14 +364,35 @@ async def _run_module(module_name: str, scan, asset_ids, session) -> dict:
                     results["issues_found"] += 1
 
         results["observations"] = observations
-    elif module_name == "cve_enrichment":
+    elif module_name in ("cve_enrichment", "known_vulnerabilities"):
         results = await _run_cve_enrichment(module_name, scan, asset_ids, session)
+    elif module_name in MODULE_TOOL_ALIASES:
+        results = await _run_external_tool_module(MODULE_TOOL_ALIASES[module_name], scan, asset_ids, session)
+        results["module"] = module_name
     elif module_name in EXTERNAL_TOOL_MODULES:
         results = await _run_external_tool_module(module_name, scan, asset_ids, session)
-    elif "owasp" in module_name:
-        results = {"module": module_name, "checks_performed": 10, "issues_found": 0}
-    elif "tls" in module_name:
-        results = {"module": module_name, "checks_performed": 5, "issues_found": 0}
+    elif module_name == "container_scan":
+        results = await _run_container_image_scan(scan, asset_ids, session)
+    elif module_name == "evidence_collection":
+        results = await _run_evidence_collection(scan, asset_ids, session)
+    elif module_name == "report_generation":
+        results = await _run_report_generation(scan, session)
+    elif module_name == "ai_analysis":
+        results = await _run_ai_analysis(scan, session)
+    elif module_name == "api_discovery":
+        results = await _run_api_discovery(scan, asset_ids, session)
+    elif module_name == "authentication_testing":
+        results = await _run_authentication_testing(scan, asset_ids, session)
+    elif module_name == "rate_limiting_check":
+        results = await _run_rate_limiting_check(scan, asset_ids, session)
+    elif module_name == "input_validation":
+        results = await _run_input_validation_check(scan, asset_ids, session)
+    elif module_name == "token_handling":
+        results = await _run_token_handling_check(scan, asset_ids, session)
+    elif module_name == "owasp_api_top_10":
+        results = await _run_owasp_api_check(scan, asset_ids, session)
+    elif module_name == "controlled_validation":
+        results = await _run_controlled_validation(scan, session)
 
     return results
 
@@ -329,7 +423,7 @@ async def _run_service_discovery(module_name: str, scan, asset_ids, session) -> 
     issues_found = 0
     nmap_bin = shutil.which("nmap")
 
-    async with httpx.AsyncClient(timeout=5.0, follow_redirects=False, trust_env=False, verify=False) as client:
+    async with httpx.AsyncClient(timeout=5.0, follow_redirects=False, trust_env=False) as client:
         for asset_id in asset_ids:
             asset_result = await session.execute(select(Asset).where(Asset.id == asset_id))
             asset = asset_result.scalar_one_or_none()
@@ -494,8 +588,7 @@ async def _run_external_tool_module(module_name: str, scan, asset_ids, session) 
         observation = await _run_limited_command(cmd, timeout=int((scan.config or {}).get("tool_timeout_seconds", 60)))
         observation.update({"asset": str(asset_id), "target": str(asset.value), "tool": tool_id})
         observations.append(observation)
-        if observation.get("return_code") not in (0, None) and observation.get("stderr_tail"):
-            issues_found += 0
+        issues_found += await _ingest_tool_findings(session, scan, asset, tool_id, observation)
 
     return {
         "module": module_name,
@@ -510,7 +603,7 @@ def _resolve_tool_binary(tool_id: str) -> str | None:
     aliases = {
         "testssl": ["testssl.sh", "testssl"],
         "pip-audit": ["pip-audit"],
-        "httpx": ["httpx"],
+        "httpx": ["httpx-pd", "httpx"],
     }
     for candidate in aliases.get(tool_id, [tool_id]):
         path = shutil.which(candidate)
@@ -551,9 +644,22 @@ def _external_tool_command(binary: str, tool_id: str, target: str, config: dict)
     if tool_id == "naabu" and host:
         return [binary, "-host", host, "-rate", "100", "-silent"]
     if tool_id == "httpx" and url:
-        return [binary, "-u", url, "-status-code", "-title", "-tech-detect", "-json"]
+        return [binary, "-u", url, "-status-code", "-title", "-tech-detect", "-json", "-silent"]
+    if tool_id == "dnsx" and host and not _looks_like_ip_address(host):
+        return [binary, "-d", host, "-silent", "-a", "-aaaa", "-cname", "-json"]
+    if tool_id == "katana" and url:
+        return [binary, "-u", url, "-silent", "-d", "1", "-jc", "-jsonl"]
     if tool_id == "dalfox" and url:
         return [binary, "url", url, "--skip-bav", "--timeout", "10", "--format", "json"]
+    if tool_id == "ffuf" and url:
+        wordlist = config.get("wordlist") or _first_existing_path([
+            "/usr/share/seclists/Discovery/Web-Content/common.txt",
+            "/usr/share/wordlists/dirb/common.txt",
+            "/usr/share/wordlists/raft-small-words.txt",
+        ])
+        if not wordlist:
+            return None
+        return [binary, "-u", url.rstrip("/") + "/FUZZ", "-w", str(wordlist), "-mc", "200,301,302,401,403,500", "-t", "5", "-timeout", "10"]
     if tool_id == "sqlmap" and url:
         return [binary, "-u", url, "--batch", "--level", "1", "--risk", "1", "--smart", "--crawl", "0"]
     if tool_id == "semgrep" and repo_path:
@@ -562,6 +668,8 @@ def _external_tool_command(binary: str, tool_id: str, target: str, config: dict)
         return [binary, "-r", repo_path, "-f", "json"]
     if tool_id == "pip-audit" and repo_path:
         return [binary, "--path", repo_path, "--format", "json"]
+    if tool_id == "depx" and repo_path:
+        return [binary, "audit", repo_path, "--json", "--require-clean", "--disable-update-check"]
     if tool_id == "trivy" and repo_path:
         return [binary, "fs", "--format", "json", repo_path]
     if tool_id == "grype" and repo_path:
@@ -780,7 +888,532 @@ async def _import_wapiti_findings(session, scan_id, asset_id, report: dict) -> i
     return imported
 
 
-async def _add_finding(session, scan_id, asset_id, title, description, severity, owasp_category, cwe_id, cvss_score, remediation, found_by_tool, evidence_metadata=None, evidence_type="validated_observation"):
+_TOOL_SEVERITY_CVSS = {
+    "critical": 9.8, "high": 8.1, "medium": 5.3, "low": 2.2, "info": 0.0, "informational": 0.0, "unknown": 0.0,
+}
+
+
+async def _run_container_image_scan(scan, asset_ids, session) -> dict:
+    image = (scan.config or {}).get("container_image")
+    if not image:
+        return {
+            "module": "container_scan", "tool": "trivy", "status": "skipped",
+            "checks_performed": 0, "issues_found": 0,
+            "message": "No container_image configured for this scan. Set scan.config.container_image to an approved image reference to scan it.",
+        }
+    binary = _resolve_tool_binary("trivy")
+    if not binary:
+        return {
+            "module": "container_scan", "tool": "trivy", "status": "skipped",
+            "checks_performed": 0, "issues_found": 0,
+            "message": "Trivy is not installed in the scanner image.",
+        }
+    observation = await _run_limited_command(
+        [binary, "image", "--format", "json", "--timeout", "120s", image],
+        timeout=int((scan.config or {}).get("tool_timeout_seconds", 120)),
+    )
+    observation.update({"target": image, "tool": "trivy"})
+    return {"module": "container_scan", "tool": "trivy", "checks_performed": 1, "issues_found": 0, "observations": [observation]}
+
+
+async def _run_evidence_collection(scan, asset_ids, session) -> dict:
+    from database.models import Asset
+    from sqlalchemy import select
+    import httpx
+
+    captured = 0
+    observations = []
+    async with httpx.AsyncClient(timeout=8.0, follow_redirects=False, trust_env=False) as client:
+        for asset_id in asset_ids:
+            asset_result = await session.execute(select(Asset).where(Asset.id == asset_id))
+            asset = asset_result.scalar_one_or_none()
+            if not asset:
+                continue
+            value = str(asset.value)
+            metadata = {"asset": value, "asset_type": asset.asset_type, "captured_at": datetime.utcnow().isoformat()}
+            if value.startswith(("http://", "https://")):
+                try:
+                    response = await client.get(value)
+                    metadata.update({"status_code": response.status_code, "headers": dict(response.headers)})
+                except Exception as exc:
+                    metadata["error"] = str(exc) or exc.__class__.__name__
+            await _add_finding(
+                session, scan.id, asset_id,
+                "Evidence Snapshot Captured",
+                f"A baseline evidence snapshot was captured for the approved target {value} during this scan for audit and retest comparison.",
+                "informational", "A05:2021 - Security Misconfiguration", "CWE-200", 0.0,
+                "No action required. This snapshot supports audit and retest comparison.",
+                "evidence_collection",
+                evidence_metadata=metadata,
+                evidence_type="scan_evidence_snapshot",
+            )
+            captured += 1
+            observations.append(metadata)
+    return {"module": "evidence_collection", "checks_performed": captured, "issues_found": 0, "observations": observations}
+
+
+async def _run_report_generation(scan, session) -> dict:
+    from database.models import Finding, ScanModule
+    from sqlalchemy import func, select
+
+    severity_rows = await session.execute(
+        select(Finding.severity, func.count(Finding.id)).where(Finding.scan_id == scan.id).group_by(Finding.severity)
+    )
+    severity_counts = {severity: count for severity, count in severity_rows.all()}
+
+    module_rows = await session.execute(
+        select(ScanModule.status, func.count(ScanModule.id)).where(ScanModule.scan_id == scan.id).group_by(ScanModule.status)
+    )
+    module_counts = {status: count for status, count in module_rows.all()}
+
+    scan.results_summary = {
+        **(scan.results_summary or {}),
+        "generated_at": datetime.utcnow().isoformat(),
+        "findings_by_severity": severity_counts,
+        "total_findings": sum(severity_counts.values()),
+        "modules_by_status": module_counts,
+    }
+    return {"module": "report_generation", "checks_performed": 1, "issues_found": 0, "summary": scan.results_summary}
+
+
+async def _run_ai_analysis(scan, session) -> dict:
+    from database.models import Finding
+    from sqlalchemy import select
+    from config import settings
+    import httpx
+
+    findings_result = await session.execute(select(Finding).where(Finding.scan_id == scan.id).limit(20))
+    findings = list(findings_result.scalars().all())
+    if not findings:
+        return {
+            "module": "ai_analysis", "status": "skipped", "checks_performed": 0, "issues_found": 0,
+            "message": "No candidate findings to summarize yet.",
+        }
+
+    summary_input = [{"title": f.title, "severity": f.severity, "owasp_category": f.owasp_category} for f in findings]
+    prompt = (
+        "Summarize these candidate security findings from an authorized scan in 3-5 plain-language sentences "
+        "for a non-technical stakeholder. These are unverified candidates, not confirmed vulnerabilities. "
+        "Do not invent findings that are not listed. Findings: " + json.dumps(summary_input)
+    )
+    try:
+        async with httpx.AsyncClient(timeout=float(settings.AI_TIMEOUT_SECONDS), trust_env=False) as client:
+            response = await client.post(
+                f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions",
+                headers={"Authorization": f"Bearer {settings.AI_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": settings.AI_MODEL,
+                    "messages": [
+                        {"role": "system", "content": "You are a security report assistant. Be concise and factual."},
+                        {"role": "user", "content": prompt},
+                    ],
+                    "temperature": settings.AI_TEMPERATURE,
+                    "max_tokens": settings.AI_MAX_OUTPUT_TOKENS,
+                },
+            )
+            response.raise_for_status()
+            data = response.json()
+        summary_text = (data.get("choices") or [{}])[0].get("message", {}).get("content", "").strip()
+    except Exception as exc:
+        return {
+            "module": "ai_analysis", "status": "skipped", "checks_performed": 0, "issues_found": 0,
+            "message": f"AI provider unavailable: {exc}",
+        }
+
+    scan.results_summary = {**(scan.results_summary or {}), "ai_summary": summary_text}
+    return {"module": "ai_analysis", "checks_performed": len(findings), "issues_found": 0, "summary": summary_text}
+
+
+async def _run_api_discovery(scan, asset_ids, session) -> dict:
+    from database.models import Asset
+    from sqlalchemy import select
+    import httpx
+
+    common_paths = ["/openapi.json", "/swagger.json", "/api-docs", "/v3/api-docs", "/.well-known/openapi.json", "/swagger/index.html"]
+    discovered = 0
+    observations = []
+    async with httpx.AsyncClient(timeout=5.0, follow_redirects=True, trust_env=False) as client:
+        for asset_id in asset_ids:
+            asset_result = await session.execute(select(Asset).where(Asset.id == asset_id))
+            asset = asset_result.scalar_one_or_none()
+            if not asset or not str(asset.value).startswith(("http://", "https://")):
+                continue
+            base = str(asset.value).rstrip("/")
+            found_paths = []
+            for path in common_paths:
+                try:
+                    response = await client.get(base + path)
+                except Exception:
+                    continue
+                if response.status_code == 200 and response.headers.get("content-type", "").startswith(("application/json", "text/html")):
+                    found_paths.append(path)
+            observations.append({"asset": str(asset_id), "target": base, "discovered_paths": found_paths})
+            if found_paths:
+                await _add_finding(
+                    session, scan.id, asset_id,
+                    "API Documentation Endpoint Discovered",
+                    f"The following API documentation or schema endpoints were reachable on {base}: {', '.join(found_paths)}.",
+                    "informational", "A05:2021 - Security Misconfiguration", "CWE-200", 0.0,
+                    "Confirm this documentation should be publicly reachable, and remove or restrict access if it exposes internal-only API surface.",
+                    "api_discovery",
+                )
+                discovered += 1
+    return {"module": "api_discovery", "checks_performed": len(asset_ids), "issues_found": discovered, "observations": observations}
+
+
+async def _run_authentication_testing(scan, asset_ids, session) -> dict:
+    from database.models import Asset
+    from sqlalchemy import select
+    import httpx
+
+    sensitive_paths = ["/admin", "/api/admin", "/actuator", "/actuator/health", "/.env", "/api/users", "/api/internal"]
+    issues = 0
+    observations = []
+    async with httpx.AsyncClient(timeout=5.0, follow_redirects=False, trust_env=False) as client:
+        for asset_id in asset_ids:
+            asset_result = await session.execute(select(Asset).where(Asset.id == asset_id))
+            asset = asset_result.scalar_one_or_none()
+            if not asset or not str(asset.value).startswith(("http://", "https://")):
+                continue
+            base = str(asset.value).rstrip("/")
+            exposed = []
+            for path in sensitive_paths:
+                try:
+                    response = await client.get(base + path)
+                except Exception:
+                    continue
+                if response.status_code == 200 and "www-authenticate" not in {key.lower() for key in response.headers.keys()}:
+                    exposed.append({"path": path, "status_code": response.status_code})
+            observations.append({"asset": str(asset_id), "target": base, "exposed_without_auth": exposed})
+            if exposed:
+                await _add_finding(
+                    session, scan.id, asset_id,
+                    "Potentially Unauthenticated Sensitive Endpoint",
+                    "The following commonly sensitive paths responded with HTTP 200 and no authentication challenge on " + base
+                    + ": " + ", ".join(item["path"] for item in exposed)
+                    + ". This is a passive reachability observation only; manual review is required before treating this as confirmed unauthorized access.",
+                    "medium", "A01:2021 - Broken Access Control", "CWE-306", 6.5,
+                    "Confirm whether these paths should require authentication, and require login or network restriction if they expose internal or administrative functionality.",
+                    "authentication_testing",
+                )
+                issues += 1
+    return {"module": "authentication_testing", "checks_performed": len(asset_ids), "issues_found": issues, "observations": observations}
+
+
+async def _run_rate_limiting_check(scan, asset_ids, session) -> dict:
+    from database.models import Asset
+    from sqlalchemy import select
+    import httpx
+
+    rate_limit_headers = {"x-ratelimit-limit", "x-ratelimit-remaining", "ratelimit-limit", "retry-after"}
+    issues = 0
+    observations = []
+    async with httpx.AsyncClient(timeout=5.0, follow_redirects=False, trust_env=False) as client:
+        for asset_id in asset_ids:
+            asset_result = await session.execute(select(Asset).where(Asset.id == asset_id))
+            asset = asset_result.scalar_one_or_none()
+            if not asset or not str(asset.value).startswith(("http://", "https://")):
+                continue
+            seen_headers = set()
+            for _ in range(3):
+                try:
+                    response = await client.get(str(asset.value))
+                except Exception:
+                    break
+                seen_headers.update(key.lower() for key in response.headers.keys())
+                await asyncio.sleep(0.5)
+            matched = sorted(seen_headers & rate_limit_headers)
+            observations.append({"asset": str(asset_id), "rate_limit_headers_observed": matched})
+            if not matched:
+                await _add_finding(
+                    session, scan.id, asset_id,
+                    "No Rate Limiting Headers Observed",
+                    f"No standard rate-limiting response headers (e.g. RateLimit-*, Retry-After) were observed on {asset.value} across a small number of requests. "
+                    "This does not confirm the absence of rate limiting, only that it is not advertised in response headers.",
+                    "low", "A04:2021 - Insecure Design", "CWE-770", 3.1,
+                    "Confirm whether rate limiting is enforced server-side or at a gateway/WAF layer, and expose standard rate-limit headers where practical.",
+                    "rate_limiting_check",
+                )
+                issues += 1
+    return {"module": "rate_limiting_check", "checks_performed": len(asset_ids), "issues_found": issues, "observations": observations}
+
+
+async def _run_input_validation_check(scan, asset_ids, session) -> dict:
+    from database.models import Asset
+    from sqlalchemy import select
+    import httpx
+
+    stack_trace_markers = [
+        "traceback (most recent call last)", "at java.", "stack trace:", "fatal error:",
+        "unhandled exception", "django.core.exceptions", "system.exception",
+    ]
+    issues = 0
+    observations = []
+    async with httpx.AsyncClient(timeout=5.0, follow_redirects=False, trust_env=False) as client:
+        for asset_id in asset_ids:
+            asset_result = await session.execute(select(Asset).where(Asset.id == asset_id))
+            asset = asset_result.scalar_one_or_none()
+            if not asset or not str(asset.value).startswith(("http://", "https://")):
+                continue
+            probe_url = str(asset.value).rstrip("/") + "?noovastack_probe=" + ("9" * 200)
+            try:
+                response = await client.get(probe_url)
+            except Exception:
+                continue
+            body_lower = response.text.lower()[:5000]
+            leaked = [marker for marker in stack_trace_markers if marker in body_lower]
+            observations.append({"asset": str(asset_id), "status_code": response.status_code, "leaked_markers": leaked})
+            if leaked:
+                await _add_finding(
+                    session, scan.id, asset_id,
+                    "Verbose Error Output on Malformed Request",
+                    f"Sending an oversized query parameter to {asset.value} returned a response that appears to include internal error or stack trace details.",
+                    "medium", "A05:2021 - Security Misconfiguration", "CWE-209", 5.3,
+                    "Disable verbose or debug error output in production and return generic error responses to clients.",
+                    "input_validation",
+                )
+                issues += 1
+    return {"module": "input_validation", "checks_performed": len(asset_ids), "issues_found": issues, "observations": observations}
+
+
+async def _run_token_handling_check(scan, asset_ids, session) -> dict:
+    from database.models import Asset
+    from sqlalchemy import select
+    import httpx
+
+    issues = 0
+    observations = []
+    async with httpx.AsyncClient(timeout=5.0, follow_redirects=False, trust_env=False) as client:
+        for asset_id in asset_ids:
+            asset_result = await session.execute(select(Asset).where(Asset.id == asset_id))
+            asset = asset_result.scalar_one_or_none()
+            if not asset or not str(asset.value).startswith(("http://", "https://")):
+                continue
+            try:
+                response = await client.get(str(asset.value))
+            except Exception:
+                continue
+            cache_control = response.headers.get("cache-control", "").lower()
+            observations.append({"asset": str(asset_id), "cache_control": cache_control or None})
+            if "no-store" not in cache_control:
+                await _add_finding(
+                    session, scan.id, asset_id,
+                    "Missing Cache-Control: no-store",
+                    f"The response from {asset.value} does not send Cache-Control: no-store. If this endpoint returns authentication tokens or session data, "
+                    "shared or browser caches could retain sensitive responses.",
+                    "low", "A02:2021 - Cryptographic Failures", "CWE-525", 3.7,
+                    "Add Cache-Control: no-store (and Pragma: no-cache for older clients) to responses that may contain tokens, credentials, or session data.",
+                    "token_handling",
+                )
+                issues += 1
+    return {"module": "token_handling", "checks_performed": len(asset_ids), "issues_found": issues, "observations": observations}
+
+
+async def _run_controlled_validation(scan, session) -> dict:
+    from database.models import Finding
+    from sqlalchemy import select
+
+    findings_result = await session.execute(select(Finding).where(Finding.scan_id == scan.id))
+    findings = list(findings_result.scalars().all())
+    high_risk = [f for f in findings if f.severity in ("critical", "high")]
+    scan.results_summary = {
+        **(scan.results_summary or {}),
+        "controlled_validation": {
+            "candidate_findings_reviewed": len(findings),
+            "high_or_critical_flagged": len(high_risk),
+            "senior_review_recommended": bool(high_risk),
+        },
+    }
+    return {
+        "module": "controlled_validation",
+        "checks_performed": len(findings),
+        "issues_found": len(high_risk),
+        "message": f"{len(high_risk)} high/critical candidate finding(s) flagged for mandatory senior review before deep-scan sign-off." if high_risk else "No high/critical candidate findings required additional senior review.",
+    }
+
+
+async def _run_owasp_api_check(scan, asset_ids, session) -> dict:
+    from database.models import Asset
+    from sqlalchemy import select
+    import httpx
+
+    issues = 0
+    observations = []
+    async with httpx.AsyncClient(timeout=5.0, follow_redirects=False, trust_env=False) as client:
+        for asset_id in asset_ids:
+            asset_result = await session.execute(select(Asset).where(Asset.id == asset_id))
+            asset = asset_result.scalar_one_or_none()
+            if not asset or not str(asset.value).startswith(("http://", "https://")):
+                continue
+            try:
+                response = await client.get(str(asset.value), headers={"Origin": "https://noovastack-scope-check.invalid"})
+            except Exception:
+                continue
+            acao = response.headers.get("access-control-allow-origin", "")
+            acac = response.headers.get("access-control-allow-credentials", "").lower()
+            observations.append({
+                "asset": str(asset_id),
+                "access_control_allow_origin": acao,
+                "access_control_allow_credentials": acac,
+                "transport": "https" if str(asset.value).startswith("https://") else "http",
+            })
+            if acao == "*" and acac == "true":
+                await _add_finding(
+                    session, scan.id, asset_id,
+                    "Permissive CORS With Credentials Allowed",
+                    f"{asset.value} returns Access-Control-Allow-Origin: * together with Access-Control-Allow-Credentials: true. "
+                    "Most current browsers reject this combination, but it indicates a misconfigured CORS policy that risks credentialed cross-origin access if relaxed further.",
+                    "medium", "A05:2021 - Security Misconfiguration", "CWE-942", 6.5,
+                    "Restrict Access-Control-Allow-Origin to an explicit allowlist of trusted origins when Access-Control-Allow-Credentials is true.",
+                    "owasp_api_top_10",
+                )
+                issues += 1
+            if str(asset.value).startswith("http://"):
+                await _add_finding(
+                    session, scan.id, asset_id,
+                    "API Reachable Over Plain HTTP",
+                    f"{asset.value} is reachable over unencrypted HTTP, exposing API requests and responses, including any tokens, to network interception.",
+                    "high", "A02:2021 - Cryptographic Failures", "CWE-319", 7.5,
+                    "Require HTTPS for all API traffic and redirect or reject plain HTTP requests.",
+                    "owasp_api_top_10",
+                )
+                issues += 1
+    return {"module": "owasp_api_top_10", "checks_performed": len(asset_ids), "issues_found": issues, "observations": observations}
+
+
+async def _ingest_tool_findings(session, scan, asset, tool_id: str, observation: dict) -> int:
+    """Parse external tool output into candidate findings (never auto-verified)."""
+    stdout = observation.get("stdout_tail") or ""
+    imported = 0
+
+    if tool_id == "nuclei":
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            template = entry.get("info") or {}
+            name = template.get("name") or entry.get("template-id") or "Nuclei Finding"
+            severity = str(template.get("severity") or "unknown").lower()
+            description = entry.get("matcher-name") or template.get("description") or "Detected by a Nuclei template against the approved target."
+            await _add_finding(
+                session, scan.id, asset.id,
+                f"Nuclei: {name}",
+                f"{description}\nTemplate: {entry.get('template-id')}\nMatched at: {entry.get('matched-at')}",
+                severity,
+                "A05:2021 - Security Misconfiguration",
+                template.get("classification", {}).get("cwe-id", [])[0] if template.get("classification", {}).get("cwe-id") else "CWE-200",
+                _TOOL_SEVERITY_CVSS.get(severity, 0.0),
+                template.get("recommendation") or "Review the affected endpoint and apply the recommended remediation for this vulnerability class.",
+                "nuclei",
+            )
+            imported += 1
+
+    elif tool_id == "subfinder":
+        subdomains = [line.strip() for line in stdout.splitlines() if line.strip() and "://" not in line]
+        if subdomains:
+            await _add_finding(
+                session, scan.id, asset.id,
+                "Subdomains Discovered",
+                "Subfinder enumerated the following subdomains for the approved domain: " + ", ".join(sorted(set(subdomains))[:25]) + ".",
+                "informational", "A05:2021 - Security Misconfiguration", "CWE-200", 0.0,
+                "Validate whether each subdomain belongs in scope and document it as an asset before testing.",
+                "subfinder",
+            )
+            imported += 1
+
+    elif tool_id == "httpx":
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            tech = ", ".join(entry.get("tech", []) or []) if isinstance(entry.get("tech"), list) else str(entry.get("tech") or "")
+            details = f"{entry.get('url')} | status={entry.get('status_code')} | title={entry.get('title')}"
+            if tech:
+                details += f" | technologies={tech}"
+            await _add_finding(
+                session, scan.id, asset.id,
+                "HTTP Service Fingerprinted",
+                "httpx probed the approved target and returned: " + details + ".",
+                "informational", "A05:2021 - Security Misconfiguration", "CWE-200", 0.0,
+                "Record the identified server and technologies as asset metadata.",
+                "httpx",
+            )
+            imported += 1
+
+    elif tool_id == "naabu":
+        ports = [line.strip() for line in stdout.splitlines() if ":" in line and line.strip()]
+        if ports:
+            await _add_finding(
+                session, scan.id, asset.id,
+                "Open TCP Services Discovered",
+                "Naabu reported reachable services: " + ", ".join(sorted(set(ports))[:25]) + ".",
+                "informational", "A05:2021 - Security Misconfiguration", "CWE-200", 0.0,
+                "Review exposed services and close ports not required for the application or testing scope.",
+                "naabu",
+            )
+            imported += 1
+
+    elif tool_id == "dnsx":
+        records = []
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            host = entry.get("host") or entry.get("input")
+            answers = entry.get("a") or entry.get("aaaa") or entry.get("cname") or []
+            records.append(f"{host} -> {', '.join(str(a) for a in answers)}")
+        if records:
+            await _add_finding(
+                session, scan.id, asset.id,
+                "DNS Records Resolved",
+                "dnsx resolved the following records for the approved domain: " + "; ".join(records[:20]) + ".",
+                "informational", "A05:2021 - Security Misconfiguration", "CWE-200", 0.0,
+                "Document resolved infrastructure and confirm it is in scope before testing.",
+                "dnsx",
+            )
+            imported += 1
+
+    elif tool_id == "katana":
+        paths = []
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                if line.startswith("http"):
+                    paths.append(line)
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            paths.append(entry.get("request", {}).get("endpoint") or entry.get("url") or "")
+        paths = [p for p in paths if p]
+        if paths:
+            await _add_finding(
+                session, scan.id, asset.id,
+                "Discovered Web Paths",
+                "Katana crawled the approved target and discovered " + str(len(paths)) + " path(s), including: " + ", ".join(sorted(set(paths))[:25]) + ".",
+                "informational", "A05:2021 - Security Misconfiguration", "CWE-200", 0.0,
+                "Review discovered paths for sensitive functionality and document them in scope.",
+                "katana",
+            )
+            imported += 1
+
+    return imported
+
+
+async def _add_finding(session, scan_id, asset_id, title, description, severity, owasp_category, cwe_id, cvss_score, remediation, found_by_tool, evidence_metadata=None, evidence_type="candidate_observation"):
     from database.models import Evidence, Finding
     from sqlalchemy import select
     import hashlib
@@ -806,8 +1439,8 @@ async def _add_finding(session, scan_id, asset_id, title, description, severity,
         cvss_score=cvss_score,
         remediation=remediation,
         found_by_tool=found_by_tool,
-        integrity_status="verified",
-        status="confirmed",
+        integrity_status="unverified",
+        status="candidate",
     )
     session.add(finding)
     await session.flush()
@@ -822,67 +1455,6 @@ async def _add_finding(session, scan_id, asset_id, title, description, severity,
         hash_value=evidence_hash,
         metadata_json=metadata,
     ))
-
-
-async def _generate_sample_findings(session, scan_id: str, asset_ids: list):
-    from database.models import Finding
-    from sqlalchemy import select
-
-    existing = await session.execute(
-        select(Finding).where(Finding.scan_id == scan_id)
-    )
-    if existing.scalars().first():
-        return
-
-    samples = [
-        {
-            "title": "Missing Security Headers",
-            "description": "The application is missing important HTTP security headers including Content-Security-Policy and X-Frame-Options.",
-            "severity": "medium",
-            "owasp_category": "A05:2021 - Security Misconfiguration",
-            "cwe_id": "CWE-693",
-            "cvss_score": 5.3,
-            "remediation": "Add Content-Security-Policy header with appropriate directives. Add X-Frame-Options: DENY header. Consider adding HSTS, X-Content-Type-Options, and Referrer-Policy headers.",
-            "found_by_tool": "nuclei",
-        },
-        {
-            "title": "TLS 1.0/1.1 Supported",
-            "description": "The server supports outdated TLS 1.0 and TLS 1.1 protocols, which have known vulnerabilities.",
-            "severity": "high",
-            "owasp_category": "A02:2021 - Cryptographic Failures",
-            "cwe_id": "CWE-327",
-            "cvss_score": 7.5,
-            "remediation": "Disable TLS 1.0 and TLS 1.1. Configure the server to only support TLS 1.2 and TLS 1.3.",
-            "found_by_tool": "testssl",
-        },
-        {
-            "title": "Information Disclosure in Error Messages",
-            "description": "The application reveals stack traces and internal paths in error messages.",
-            "severity": "low",
-            "owasp_category": "A05:2021 - Security Misconfiguration",
-            "cwe_id": "CWE-209",
-            "cvss_score": 3.5,
-            "remediation": "Configure custom error pages. Disable debug mode in production. Ensure error messages do not expose internal details.",
-            "found_by_tool": "zap",
-        },
-    ]
-
-    for s in samples:
-        finding = Finding(
-            scan_id=scan_id,
-            asset_id=asset_ids[0] if asset_ids else None,
-            title=s["title"],
-            description=s["description"],
-            severity=s["severity"],
-            owasp_category=s["owasp_category"],
-            cwe_id=s["cwe_id"],
-            cvss_score=s["cvss_score"],
-            remediation=s["remediation"],
-            found_by_tool=s["found_by_tool"],
-            integrity_status="unverified",
-        )
-        session.add(finding)
-
 
 async def _update_scan_status(scan_id: str, status: str):
     from database import AsyncSessionLocal

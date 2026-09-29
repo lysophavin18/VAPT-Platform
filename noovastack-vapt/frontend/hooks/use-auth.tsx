@@ -24,13 +24,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const router = useRouter();
 
   useEffect(() => {
-    const savedToken = sessionStorage.getItem('noovastack.token') || localStorage.getItem('noovastack.token');
-    const savedUser = sessionStorage.getItem('noovastack.user') || localStorage.getItem('noovastack.user');
-    if (savedToken && savedUser) {
-      setToken(savedToken);
-      setUser(JSON.parse(savedUser) as User);
+    let active = true;
+    const savedToken = sessionStorage.getItem('noovastack.token');
+    const savedUser = sessionStorage.getItem('noovastack.user');
+
+    localStorage.removeItem('noovastack.token');
+    localStorage.removeItem('noovastack.user');
+
+    if (savedUser) {
+      try {
+        JSON.parse(savedUser) as User;
+      } catch {
+        sessionStorage.removeItem('noovastack.user');
+      }
     }
-    setLoading(false);
+
+    if (!savedToken) {
+      sessionStorage.removeItem('noovastack.user');
+      setLoading(false);
+      return () => {
+        active = false;
+      };
+    }
+
+    api.me(savedToken)
+      .then((profile) => {
+        if (!active || sessionStorage.getItem('noovastack.token') !== savedToken) return;
+        sessionStorage.setItem('noovastack.user', JSON.stringify(profile));
+        setToken(savedToken);
+        setUser(profile);
+      })
+      .catch(() => {
+        if (sessionStorage.getItem('noovastack.token') === savedToken) {
+          sessionStorage.removeItem('noovastack.token');
+          sessionStorage.removeItem('noovastack.user');
+        }
+        if (!active) return;
+        setToken(null);
+        setUser(null);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+
+    return () => {
+      active = false;
+    };
   }, []);
 
   async function login(email: string, password: string) {

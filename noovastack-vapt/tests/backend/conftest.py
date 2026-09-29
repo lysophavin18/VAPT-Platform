@@ -1,3 +1,5 @@
+import os
+
 import pytest
 from fastapi.testclient import TestClient
 from main import app
@@ -6,6 +8,9 @@ from database.models import User
 from config import settings
 
 import bcrypt
+
+
+ADMIN_PASSWORD = os.environ["INITIAL_ADMIN_PASSWORD"]
 
 
 @pytest.fixture(scope="session")
@@ -29,7 +34,7 @@ def auth_headers(test_client):
 
     response = test_client.post(
         "/api/auth/login",
-        data={"username": "admin@noovastack.local", "password": "AdminSecure2024!"},
+        data={"username": "admin@noovastack.local", "password": ADMIN_PASSWORD},
     )
     if response.status_code == 200:
         token = response.json()["access_token"]
@@ -41,7 +46,7 @@ def auth_headers(test_client):
         json={
             "email": "admin@noovastack.local",
             "username": "admin",
-            "password": "AdminSecure2024!",
+            "password": ADMIN_PASSWORD,
             "full_name": "Test Admin",
         },
     )
@@ -49,7 +54,7 @@ def auth_headers(test_client):
     # Try login again
     response = test_client.post(
         "/api/auth/login",
-        data={"username": "admin@noovastack.local", "password": "AdminSecure2024!"},
+        data={"username": "admin@noovastack.local", "password": ADMIN_PASSWORD},
     )
     if response.status_code == 200:
         token = response.json()["access_token"]

@@ -32,14 +32,14 @@ The AI assistant is used for guidance, planning, finding review, remediation sup
 | PostgreSQL | `localhost:5434` |
 | Redis | `localhost:6381` |
 
-Default local account:
+Initial local administrator:
 
 | Field | Value |
 | --- | --- |
 | Email | `admin@noovastack.local` |
-| Password | `AdminSecure2024!` |
+| Password | Set through `INITIAL_ADMIN_PASSWORD` before the first startup |
 
-Change all default credentials before any non-local deployment.
+Use a unique generated password. Supplying `INITIAL_ADMIN_PASSWORD` again rotates the seeded administrator password on the next startup; remove it from the environment afterward.
 
 ## Quick Start
 
@@ -178,6 +178,8 @@ Default profiles are defined in `backend/scans/profiles/__init__.py`.
 | `standard_network` | Network | Standard | Black box | Medium |
 | `standard_repository` | Repository | Standard | White box | Low |
 | `quick_attack_surface` | External attack surface | Quick | Black box | Low |
+
+Repository and white-box profiles include a passive [depx](https://github.com/projectdiscovery/depx) audit for known malicious packages. The backend and worker image installs a checksum-verified `depx` release; set `config.repository_path` to the approved repository mounted in the worker before launching the scan.
 
 ## Safety and Authorization Model
 

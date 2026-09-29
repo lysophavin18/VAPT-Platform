@@ -1,4 +1,4 @@
-import { Archive, Bell, Bot, Calculator, CalendarClock, CheckCircle2, Container, FileCode2, FileText, FolderKanban, Gauge, Globe2, Network, Radar, Search, Settings, ShieldAlert, ShieldCheck, Users } from 'lucide-react';
+import { Archive, Bell, Bot, Calculator, CalendarClock, CheckCircle2, ClipboardCheck, Container, FileCode2, FileText, FolderKanban, Gauge, Globe2, Network, Radar, Search, Settings, ShieldAlert, ShieldCheck, Users } from 'lucide-react';
 import { BRAND } from '@/lib/branding';
 
 export const APP_NAME = BRAND.productName;
@@ -12,17 +12,18 @@ export const scanCategories = [
 ] as const;
 
 export const navItems = [
-  { href: '/dashboard', label: 'Dashboard', icon: Gauge, roles: ['admin', 'manager', 'analyst', 'viewer'] },
-  { href: '/projects', label: 'Projects', icon: FolderKanban, roles: ['admin', 'manager', 'analyst', 'viewer'], children: [{ label: 'All Projects', href: '/projects' }, { label: 'New Project', href: '/projects/new' }, { label: 'Archived Projects', href: '/projects?status=archived' }] },
-  { href: '/assets', label: 'Assets', icon: Network, roles: ['admin', 'manager', 'analyst', 'viewer'], children: [{ label: 'Asset Inventory', href: '/assets' }, { label: 'Asset Discovery', href: '/assets/discovery' }, { label: 'Asset Graph', href: '/assets/graph' }, { label: 'Scope Review', href: '/assets?scope=review' }] },
-  { href: '/scans', label: 'Scans', icon: Radar, roles: ['admin', 'manager', 'analyst', 'viewer'], children: [{ label: 'All Scans', href: '/scans' }, { label: 'New Scan', href: '/scans/new' }, { label: 'Running', href: '/scans?status=running' }, { label: 'Completed', href: '/scans?status=completed' }, { label: 'Failed or Blocked', href: '/scans?status=attention' }] },
-  { href: '/schedules', label: 'Schedules', icon: CalendarClock, roles: ['admin', 'manager', 'analyst'] },
-  { href: '/findings', label: 'Findings', icon: ShieldCheck, roles: ['admin', 'manager', 'analyst', 'viewer'] },
-  { href: '/ai-agents', label: 'Generative AI', icon: Bot, roles: ['admin', 'manager', 'analyst', 'viewer'] },
-  { href: '/cvss-calculator', label: 'CVSS Calculator', icon: Calculator, roles: ['admin', 'manager', 'analyst', 'viewer'] },
-  { href: '/reports', label: 'Reports', icon: FileText, roles: ['admin', 'manager', 'analyst', 'viewer'] },
-  { href: '/retests', label: 'Retests', icon: CheckCircle2, roles: ['admin', 'manager', 'analyst'] },
-  { href: '/audit-logs', label: 'Audit Logs', icon: Archive, roles: ['admin', 'manager'] },
+  { href: '/dashboard', label: 'Dashboard', icon: Gauge, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
+  { href: '/projects', label: 'Projects', icon: FolderKanban, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'], children: [{ label: 'All Projects', href: '/projects' }, { label: 'New Project', href: '/projects/new' }, { label: 'Archived Projects', href: '/projects?status=archived' }] },
+  { href: '/assets', label: 'Assets', icon: Network, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'], children: [{ label: 'Asset Inventory', href: '/assets' }, { label: 'Asset Discovery', href: '/assets/discovery' }, { label: 'Domain Monitoring', href: '/assets/monitoring' }, { label: 'Asset Groups', href: '/assets/groups' }, { label: 'Asset Graph', href: '/assets/graph' }, { label: 'Scope Review', href: '/assets?scope=review' }] },
+  { href: '/scans', label: 'Scans', icon: Radar, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'], children: [{ label: 'All Scans', href: '/scans' }, { label: 'New Scan', href: '/scans/new' }, { label: 'Running', href: '/scans?status=running' }, { label: 'Completed', href: '/scans?status=completed' }, { label: 'Failed or Blocked', href: '/scans?status=attention' }] },
+  { href: '/approvals', label: 'Approvals', icon: ClipboardCheck, roles: ['admin', 'manager', 'security_team'] },
+  { href: '/schedules', label: 'Schedules', icon: CalendarClock, roles: ['admin', 'manager', 'security_team', 'analyst'] },
+  { href: '/findings', label: 'Findings', icon: ShieldCheck, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
+  { href: '/ai-agents', label: 'Generative AI', icon: Bot, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
+  { href: '/cvss-calculator', label: 'CVSS Calculator', icon: Calculator, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
+  { href: '/reports', label: 'Reports', icon: FileText, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
+  { href: '/retests', label: 'Retests', icon: CheckCircle2, roles: ['admin', 'manager', 'security_team', 'analyst'] },
+  { href: '/audit-logs', label: 'Audit Logs', icon: Archive, roles: ['admin', 'manager', 'security_team'] },
   { href: '/administration', label: 'System Administrator', icon: Settings, roles: ['admin'] },
 ] as const;
 

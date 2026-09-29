@@ -6,8 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from database.models import Finding, AuditLog
-from auth import require_user, User
+from database.models import Finding, AuditLog, Project, Scan
+from auth import get_finding_or_404, get_project_or_404, get_scan_or_404, project_access_clause, require_user, User
 from api.schemas import FindingResponse, FindingStatusUpdate
 
 router = APIRouter()
@@ -16,12 +16,21 @@ router = APIRouter()
 @router.get("", response_model=list[FindingResponse])
 async def list_findings(
     project_id: str | None = None,
+    scan_id: str | None = None,
     severity: str | None = None,
     status_filter: str | None = None,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    query = select(Finding)
+    if project_id:
+        await get_project_or_404(db, project_id, current_user)
+    if scan_id:
+        await get_scan_or_404(db, scan_id, current_user)
+    query = select(Finding).join(Scan, Scan.id == Finding.scan_id).join(Project, Project.id == Scan.project_id).where(project_access_clause(current_user))
+    if project_id:
+        query = query.where(Scan.project_id == project_id)
+    if scan_id:
+        query = query.where(Finding.scan_id == scan_id)
     if severity:
         query = query.where(Finding.severity == severity)
     if status_filter:
@@ -38,11 +47,7 @@ async def get_finding(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Finding).where(Finding.id == finding_id))
-    finding = result.scalar_one_or_none()
-    if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
-    return finding
+    return await get_finding_or_404(db, finding_id, current_user)
 
 
 @router.post("/{finding_id}/verify", response_model=FindingResponse)
@@ -51,10 +56,7 @@ async def verify_finding(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Finding).where(Finding.id == finding_id))
-    finding = result.scalar_one_or_none()
-    if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
+    finding = await get_finding_or_404(db, finding_id, current_user)
     finding.integrity_status = "verified"
     finding.status = "confirmed"
     await db.commit()
@@ -69,10 +71,7 @@ async def update_finding_status(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Finding).where(Finding.id == finding_id))
-    finding = result.scalar_one_or_none()
-    if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
+    finding = await get_finding_or_404(db, finding_id, current_user)
     previous = finding.status
     finding.status = data.status
     if data.status == "fixed":
@@ -96,10 +95,7 @@ async def reject_finding(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Finding).where(Finding.id == finding_id))
-    finding = result.scalar_one_or_none()
-    if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
+    finding = await get_finding_or_404(db, finding_id, current_user)
     finding.status = "rejected"
     await db.commit()
     await db.refresh(finding)
@@ -112,10 +108,7 @@ async def mark_false_positive(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Finding).where(Finding.id == finding_id))
-    finding = result.scalar_one_or_none()
-    if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
+    finding = await get_finding_or_404(db, finding_id, current_user)
     finding.status = "false_positive"
     await db.commit()
     await db.refresh(finding)

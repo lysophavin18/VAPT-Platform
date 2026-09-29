@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Network, Plus, Search } from 'lucide-react';
+import { Activity, Network, Plus, Search } from 'lucide-react';
 import { EmptyState } from '@/components/feedback/empty-state';
 import { PageHeader } from '@/components/layout/page-header';
 import { DataTable } from '@/components/tables/data-table';
@@ -26,7 +26,7 @@ export default function AssetsPage() {
       <PageHeader
         title="Asset Inventory"
         description="Inventory of domains, URLs, IPs, APIs, repositories, services, and technologies."
-        actions={<><Link href="/assets/discovery"><Button><Search className="h-4 w-4" /> Start Asset Discovery</Button></Link><Link href="/assets/graph"><Button variant="outline"><Network className="h-4 w-4" /> Asset Graph</Button></Link></>}
+        actions={<><Link href="/assets/discovery"><Button><Search className="h-4 w-4" /> Start Asset Discovery</Button></Link><Link href="/assets/monitoring"><Button variant="outline"><Activity className="h-4 w-4" /> Domain Monitoring</Button></Link><Link href="/assets/graph"><Button variant="outline"><Network className="h-4 w-4" /> Asset Graph</Button></Link></>}
       />
       <Card className="mb-5"><CardContent className="flex flex-col gap-3 sm:flex-row"><Select value={selectedProject ?? ''} onChange={(e) => setProjectId(e.target.value)} aria-label="Project filter"><option value="">Choose project</option>{projects.data?.map((project) => <option key={project.id} value={project.id}>{project.name}</option>)}</Select><Link href={`/assets/discovery${selectedProject ? `?project=${selectedProject}` : ''}`}><Button variant="outline"><Plus className="h-4 w-4" /> Add Asset</Button></Link></CardContent></Card>
       <DataTable<Asset>

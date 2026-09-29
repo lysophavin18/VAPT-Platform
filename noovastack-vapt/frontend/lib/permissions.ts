@@ -23,5 +23,5 @@ export function canAccess(role: string | undefined, allowed: readonly string[]) 
 }
 
 export function canApprove(role?: string) {
-  return ['admin', 'manager'].includes(normalizeRole(role));
+  return ['admin', 'manager', 'security_team'].includes(normalizeRole(role));
 }

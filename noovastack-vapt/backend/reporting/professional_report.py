@@ -22,7 +22,7 @@ from jinja2 import Environment, select_autoescape
 
 
 BRAND_PRODUCT_NAME = "NoovaStack VAPT"
-BRAND_REPORT_TITLE = "NoovaStack  Security Assessment Report"
+BRAND_REPORT_TITLE = "NoovaStack VAPT Technical Security Assessment Report"
 BRAND_COMPANY_NAME = "Noova Stack Technology Co., Ltd."
 BRAND_CONFIDENTIALITY = "CONFIDENTIAL"
 BRAND_DISTRIBUTION_NOTICE = "Do not distribute without authorization"

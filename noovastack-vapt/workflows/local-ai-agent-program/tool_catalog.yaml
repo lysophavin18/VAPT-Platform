@@ -63,6 +63,16 @@ tools:
     blocked_options: [parallel_stress_mode, starttls_guessing_outside_scope]
     evidence_outputs: [protocols, ciphers, vulnerabilities, certificate_metadata]
 
+  depx_audit:
+    display_name: depx
+    category: dependency
+    risk_level: low
+    safe_default: true
+    purpose: Passive audit of approved repository lockfiles and SBOMs for known malicious packages.
+    required_scope: approved_repository_path
+    blocked_options: [home_directory_sweep, unapproved_repository, github_org_scan]
+    evidence_outputs: [package, ecosystem, verdict, advisory_id, confidence]
+
 execution_rules:
   model_direct_execution: forbidden
   shell_pipelines_from_model: forbidden

@@ -83,7 +83,7 @@ async def update_user_role(
     db: AsyncSession = Depends(get_db),
     admin: UserModel = Depends(require_admin),
 ):
-    valid_roles = {"admin", "manager", "analyst", "viewer"}
+    valid_roles = {"admin", "manager", "security_team", "analyst", "viewer"}
     if role not in valid_roles:
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}")
 
@@ -110,7 +110,7 @@ async def update_user_profile(
     db: AsyncSession = Depends(get_db),
     admin: UserModel = Depends(require_admin),
 ):
-    valid_roles = {"admin", "manager", "analyst", "viewer"}
+    valid_roles = {"admin", "manager", "security_team", "analyst", "viewer"}
     if payload.role not in valid_roles:
         raise HTTPException(status_code=400, detail=f"Invalid role. Must be one of: {valid_roles}")
     if not payload.email.strip() or "@" not in payload.email:

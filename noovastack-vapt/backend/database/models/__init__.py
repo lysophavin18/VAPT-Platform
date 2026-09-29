@@ -107,6 +107,21 @@ class Asset(Base):
     findings = relationship("Finding", back_populates="asset", cascade="all, delete-orphan")
 
 
+class AssetGroup(Base):
+    __tablename__ = "asset_groups"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    targets = Column(JSONB, default=list)
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"))
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    project = relationship("Project")
+
+
 class ScanProfile(Base):
     __tablename__ = "scan_profiles"
 
@@ -325,6 +340,110 @@ class Approval(Base):
     approved_by_rel = relationship("User", back_populates="approvals_decided", foreign_keys=[approved_by])
 
 
+class AIAgent(Base):
+    __tablename__ = "ai_agents"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    slug = Column(String(100), unique=True, nullable=False)
+    name = Column(String(200), nullable=False)
+    agent_type = Column(String(50), default="Planner")
+    purpose = Column(String(500))
+    description = Column(Text)
+    status = Column(String(20), default="idle")
+    risk_level = Column(String(20), default="low")
+    model = Column(String(100))
+    provider = Column(String(50))
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    runs = relationship("AIAgentRun", back_populates="agent", cascade="all, delete-orphan")
+    tasks = relationship("AIAgentTask", back_populates="agent", cascade="all, delete-orphan")
+    activities = relationship("AIAgentActivity", back_populates="agent", cascade="all, delete-orphan")
+    recommendations = relationship("AIAgentRecommendation", back_populates="agent", cascade="all, delete-orphan")
+
+
+class AIAgentRun(Base):
+    __tablename__ = "ai_agent_runs"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    agent_id = Column(UUID(as_uuid=True), ForeignKey("ai_agents.id", ondelete="CASCADE"), nullable=False)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    engagement_id = Column(UUID(as_uuid=True), ForeignKey("engagements.id", ondelete="SET NULL"))
+    started_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    objective = Column(Text)
+    status = Column(String(20), default="queued")
+    plan = Column(JSONB, default=dict)
+    celery_task_id = Column(String(100))
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+
+    agent = relationship("AIAgent", back_populates="runs")
+    project = relationship("Project")
+    engagement = relationship("Engagement")
+    started_by_rel = relationship("User")
+    tasks = relationship("AIAgentTask", back_populates="run", cascade="all, delete-orphan")
+    activities = relationship("AIAgentActivity", back_populates="run", cascade="all, delete-orphan")
+    recommendations = relationship("AIAgentRecommendation", back_populates="run", cascade="all, delete-orphan")
+
+
+class AIAgentTask(Base):
+    __tablename__ = "ai_agent_tasks"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("ai_agent_runs.id", ondelete="CASCADE"), nullable=False)
+    agent_id = Column(UUID(as_uuid=True), ForeignKey("ai_agents.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(500))
+    target = Column(String(1000))
+    module = Column(String(100), nullable=False)
+    risk_level = Column(String(20), default="low")
+    status = Column(String(20), default="queued")
+    scan_id = Column(UUID(as_uuid=True), ForeignKey("scans.id", ondelete="SET NULL"))
+    ai_tool_request_id = Column(UUID(as_uuid=True), ForeignKey("ai_tool_requests.id", ondelete="SET NULL"))
+    result = Column(Text)
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+
+    run = relationship("AIAgentRun", back_populates="tasks")
+    agent = relationship("AIAgent", back_populates="tasks")
+    scan = relationship("Scan")
+    ai_tool_request = relationship("AIToolRequest")
+
+
+class AIAgentActivity(Base):
+    __tablename__ = "ai_agent_activities"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("ai_agent_runs.id", ondelete="CASCADE"), nullable=False)
+    agent_id = Column(UUID(as_uuid=True), ForeignKey("ai_agents.id", ondelete="CASCADE"), nullable=False)
+    message = Column(Text, nullable=False)
+    status = Column(String(20), default="info")
+    created_at = Column(DateTime, server_default=func.now())
+
+    run = relationship("AIAgentRun", back_populates="activities")
+    agent = relationship("AIAgent", back_populates="activities")
+
+
+class AIAgentRecommendation(Base):
+    __tablename__ = "ai_agent_recommendations"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    run_id = Column(UUID(as_uuid=True), ForeignKey("ai_agent_runs.id", ondelete="CASCADE"), nullable=False)
+    agent_id = Column(UUID(as_uuid=True), ForeignKey("ai_agents.id", ondelete="CASCADE"), nullable=False)
+    title = Column(String(500), nullable=False)
+    severity = Column(String(20), default="low")
+    confidence = Column(Float, default=0.0)
+    rationale = Column(Text)
+    review_status = Column(String(20), default="pending")
+    finding_id = Column(UUID(as_uuid=True), ForeignKey("findings.id", ondelete="SET NULL"))
+    created_at = Column(DateTime, server_default=func.now())
+
+    run = relationship("AIAgentRun", back_populates="recommendations")
+    agent = relationship("AIAgent", back_populates="recommendations")
+    finding = relationship("Finding")
+
+
 class AIToolRequest(Base):
     __tablename__ = "ai_tool_requests"
 
@@ -398,3 +517,71 @@ class CVESyncState(Base):
     records_synced = Column(Integer, default=0)
     error = Column(Text)
     metadata_json = Column(JSONB, default=dict)
+
+
+class DomainMonitor(Base):
+    """
+    Tracks a domain that is continuously re-discovered on a schedule.
+    Each check diffs the result against the previous snapshot and writes
+    DomainMonitorEvent rows for every detected change.
+    """
+    __tablename__ = "domain_monitors"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False)
+    domain = Column(String(500), nullable=False)
+    label = Column(String(255))          # friendly name, e.g. "Production"
+    status = Column(String(20), default="active")   # active | paused | stopped
+    check_interval_hours = Column(Integer, default=24)
+    discovery_types = Column(JSONB, default=lambda: ["subdomain_enum", "dns_enum", "tech_fingerprint"])
+    # Serialised snapshot of the last successful check result (list of asset dicts)
+    last_snapshot = Column(JSONB, default=list)
+    last_checked_at = Column(DateTime)
+    next_check_at = Column(DateTime)
+    celery_task_id = Column(String(100))
+    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    project = relationship("Project")
+    events = relationship("DomainMonitorEvent", back_populates="monitor", cascade="all, delete-orphan", order_by="DomainMonitorEvent.detected_at.desc()")
+
+
+class DomainMonitorEvent(Base):
+    """
+    A detected change on a monitored domain — new subdomain, IP change, tech update, etc.
+    """
+    __tablename__ = "domain_monitor_events"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    monitor_id = Column(UUID(as_uuid=True), ForeignKey("domain_monitors.id", ondelete="CASCADE"), nullable=False)
+    # Event types: new_subdomain | removed_subdomain | ip_changed | port_added | port_removed
+    #              tech_changed | new_asset | status_code_changed
+    event_type = Column(String(50), nullable=False)
+    severity = Column(String(20), default="info")   # info | warning | critical
+    asset_value = Column(String(500))               # the asset this change concerns
+    summary = Column(String(500), nullable=False)
+    details = Column(JSONB, default=dict)           # before/after values, full context
+    detected_at = Column(DateTime, server_default=func.now())
+    acknowledged_at = Column(DateTime)
+    acknowledged_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+
+    monitor = relationship("DomainMonitor", back_populates="events")
+
+
+class APIToken(Base):
+    """Personal API tokens for programmatic access to the platform."""
+    __tablename__ = "api_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String(255), nullable=False)
+    token_prefix = Column(String(8), nullable=False)   # first 8 chars shown in UI
+    token_hash = Column(String(255), nullable=False)   # bcrypt hash for verification
+    scopes = Column(JSONB, default=list)               # e.g. ["read", "scan:read"]
+    last_used_at = Column(DateTime)
+    expires_at = Column(DateTime)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+
+    user = relationship("User")

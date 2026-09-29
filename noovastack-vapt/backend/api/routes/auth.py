@@ -2,7 +2,7 @@
 NoovaStack VAPT Platform - Auth Routes
 """
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -13,17 +13,20 @@ from auth import (
     verify_password, get_password_hash, create_access_token,
     create_refresh_token, get_current_user, require_user,
 )
-from api.schemas import TokenResponse, LoginRequest, RegisterRequest, UserResponse
+from api.schemas import TokenResponse, LoginRequest, RegisterRequest, UserResponse, UpdateProfileRequest, ChangePasswordRequest
 from config import settings
+from api.rate_limit import check_auth_rate_limit
 
 router = APIRouter()
 
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: AsyncSession = Depends(get_db),
 ):
+    await check_auth_rate_limit(request)
     result = await db.execute(
         select(User).where(
             (User.email == form_data.username) | (User.username == form_data.username)
@@ -57,7 +60,8 @@ async def login(
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-async def register(request: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(http_request: Request, request: RegisterRequest, db: AsyncSession = Depends(get_db)):
+    await check_auth_rate_limit(http_request)
     existing = await db.execute(select(User).where(
         (User.email == request.email) | (User.username == request.username)
     ))
@@ -108,6 +112,45 @@ async def refresh_token(refresh_token: str, db: AsyncSession = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 async def get_me(current_user: User = Depends(require_user)):
     return current_user
+
+
+@router.patch("/me", response_model=UserResponse)
+async def update_me(
+    request: UpdateProfileRequest,
+    current_user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if request.email and request.email != current_user.email:
+        existing = await db.execute(select(User).where(User.email == request.email))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Email already in use")
+        current_user.email = request.email
+
+    if request.username and request.username != current_user.username:
+        existing = await db.execute(select(User).where(User.username == request.username))
+        if existing.scalar_one_or_none():
+            raise HTTPException(status_code=400, detail="Username already taken")
+        current_user.username = request.username
+
+    if request.full_name is not None:
+        current_user.full_name = request.full_name
+
+    await db.commit()
+    await db.refresh(current_user)
+    return current_user
+
+
+@router.post("/change-password")
+async def change_password(
+    request: ChangePasswordRequest,
+    current_user: User = Depends(require_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if not verify_password(request.current_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+    current_user.password_hash = get_password_hash(request.new_password)
+    await db.commit()
+    return {"message": "Password changed successfully"}
 
 
 @router.post("/logout")

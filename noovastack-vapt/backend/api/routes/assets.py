@@ -1,14 +1,14 @@
 """
 NoovaStack VAPT Platform - Asset Routes
 """
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from database.models import Asset, AuditLog, Project
-from auth import require_user, User, require_manager
-from api.schemas import AssetCreate, AssetUpdate, AssetResponse, AssetDiscoveryRequest
+from auth import get_asset_or_404, get_project_or_404, require_user, User, require_manager
+from api.schemas import AssetCreate, AssetUpdate, AssetResponse, AssetDiscoveryRequest, DiscoveryJobStatus
 
 router = APIRouter()
 
@@ -20,9 +20,11 @@ async def create_asset(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    proj = await db.execute(select(Project).where(Project.id == project_id))
-    if not proj.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Project not found")
+    await get_project_or_404(db, project_id, current_user)
+    if data.parent_asset_id:
+        parent = await get_asset_or_404(db, data.parent_asset_id, current_user)
+        if str(parent.project_id) != str(project_id):
+            raise HTTPException(status_code=400, detail="Parent asset must belong to the same project")
 
     asset = Asset(
         project_id=project_id,
@@ -45,14 +47,21 @@ async def list_assets(
     project_id: str,
     scope_status: str | None = None,
     approval_status: str | None = None,
+    asset_type: str | None = Query(default=None, description="Filter by asset type: domain, subdomain, ip_address, url, service, cidr"),
+    source: str | None = Query(default=None, description="Filter by source: discovery, manual"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
+    await get_project_or_404(db, project_id, current_user)
     query = select(Asset).where(Asset.project_id == project_id)
     if scope_status:
         query = query.where(Asset.scope_status == scope_status)
     if approval_status:
         query = query.where(Asset.approval_status == approval_status)
+    if asset_type:
+        query = query.where(Asset.asset_type == asset_type)
+    if source:
+        query = query.where(Asset.source == source)
     result = await db.execute(query.order_by(Asset.created_at.desc()))
     return result.scalars().all()
 
@@ -63,11 +72,7 @@ async def get_asset(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="Asset not found")
-    return asset
+    return await get_asset_or_404(db, asset_id, current_user)
 
 
 @router.patch("/assets/{asset_id}", response_model=AssetResponse)
@@ -77,11 +82,13 @@ async def update_asset(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="Asset not found")
-    for key, value in data.model_dump(exclude_unset=True).items():
+    asset = await get_asset_or_404(db, asset_id, current_user)
+    updates = data.model_dump(exclude_unset=True)
+    if current_user.role not in ("admin", "manager") and {
+        "scope_status", "approval_status"
+    }.intersection(updates):
+        raise HTTPException(status_code=403, detail="Manager role required to change asset scope or approval")
+    for key, value in updates.items():
         setattr(asset, key, value)
     await db.commit()
     await db.refresh(asset)
@@ -94,10 +101,7 @@ async def approve_asset(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager),
 ):
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="Asset not found")
+    asset = await get_asset_or_404(db, asset_id, current_user)
     asset.approval_status = "approved"
     asset.scope_status = "in_scope"
     await db.commit()
@@ -111,10 +115,7 @@ async def reject_asset(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager),
 ):
-    result = await db.execute(select(Asset).where(Asset.id == asset_id))
-    asset = result.scalar_one_or_none()
-    if not asset:
-        raise HTTPException(status_code=404, detail="Asset not found")
+    asset = await get_asset_or_404(db, asset_id, current_user)
     asset.approval_status = "rejected"
     asset.scope_status = "out_of_scope"
     await db.commit()
@@ -129,9 +130,7 @@ async def start_asset_discovery(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    proj = await db.execute(select(Project).where(Project.id == project_id))
-    if not proj.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Project not found")
+    await get_project_or_404(db, project_id, current_user)
 
     from workers.celery_app import run_asset_discovery
     task = run_asset_discovery.delay(project_id, request.target, request.discovery_types, request.target_type)
@@ -140,7 +139,12 @@ async def start_asset_discovery(
         actor_id=current_user.id,
         event_type="asset_discovery",
         action="started",
-        details={"target": request.target, "target_type": request.target_type, "discovery_types": request.discovery_types, "job_id": task.id},
+        details={
+            "target": request.target,
+            "target_type": request.target_type,
+            "discovery_types": request.discovery_types,
+            "job_id": task.id,
+        },
     ))
     await db.commit()
     return {
@@ -151,12 +155,107 @@ async def start_asset_discovery(
     }
 
 
+@router.get("/projects/{project_id}/discovery-jobs/{job_id}", response_model=DiscoveryJobStatus)
+async def get_discovery_job_status(
+    project_id: str,
+    job_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """
+    Poll the status of a running asset discovery job.
+    States: PENDING → STARTED → SUCCESS | FAILURE
+    """
+    await get_project_or_404(db, project_id, current_user)
+
+    try:
+        from celery.result import AsyncResult
+        from workers.celery_app import celery_app
+        result = AsyncResult(job_id, app=celery_app)
+        state = result.state  # PENDING, STARTED, SUCCESS, FAILURE, RETRY
+
+        info = result.info if isinstance(result.info, dict) else {}
+
+        if state == "SUCCESS":
+            payload = result.result or {}
+            return DiscoveryJobStatus(
+                job_id=job_id,
+                state=state,
+                status=payload.get("status", "completed"),
+                assets_found=payload.get("assets_found", 0),
+                assets=payload.get("assets", []),
+                error=None,
+            )
+        elif state == "FAILURE":
+            exc = result.result
+            return DiscoveryJobStatus(
+                job_id=job_id,
+                state=state,
+                status="failed",
+                assets_found=0,
+                assets=[],
+                error=str(exc) if exc else "Unknown error",
+            )
+        else:
+            # PENDING / STARTED / RETRY
+            return DiscoveryJobStatus(
+                job_id=job_id,
+                state=state,
+                status="running",
+                assets_found=0,
+                assets=[],
+                error=None,
+            )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Could not query job status: {exc}")
+
+
+@router.post("/assets/{asset_id}/reprobe", response_model=AssetResponse)
+async def reprobe_asset(
+    asset_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """
+    Re-run technology fingerprinting on a single asset.
+    Uses httpx tech-detect + whatweb (if installed).
+    """
+    asset = await get_asset_or_404(db, asset_id, current_user)
+
+    if asset.asset_type not in {"url", "service", "ip_address", "domain", "subdomain"}:
+        raise HTTPException(status_code=400, detail="Asset type cannot be probed for technology")
+
+    import asyncio
+
+    async def _do_probe():
+        from workers.tasks_discovery import _safe_probe
+        return await _safe_probe(asset.value, asset.asset_type)
+
+    loop = asyncio.new_event_loop()
+    try:
+        probe = loop.run_until_complete(_do_probe())
+    finally:
+        loop.close()
+
+    if probe.get("reachable"):
+        asset.technology = {**(asset.technology or {}), **probe.get("technology", {})}
+        asset.ports_services = {**(asset.ports_services or {}), **probe.get("ports_services", {})}
+        asset.discovery_method = "safe_active"
+        from datetime import datetime
+        asset.last_observed_at = datetime.utcnow()
+        await db.commit()
+        await db.refresh(asset)
+
+    return asset
+
+
 @router.get("/projects/{project_id}/asset-graph")
 async def get_asset_graph(
     project_id: str,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
+    await get_project_or_404(db, project_id, current_user)
     result = await db.execute(
         select(Asset).where(Asset.project_id == project_id)
     )

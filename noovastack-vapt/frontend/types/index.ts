@@ -1,4 +1,5 @@
 export * from './asset';
+export * from './asset-group';
 export * from './approval';
 export * from './finding';
 export * from './project';

@@ -2,7 +2,7 @@
 NoovaStack VAPT Platform - Scan Routes
 """
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 import asyncio
 import json
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -12,9 +12,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from database import get_db
-from database.models import Approval, Evidence, Scan, ScanAsset, ScanEvent, ScanModule, ScanProfile, ScanSafetyState, Asset, Project, Finding, AuditLog
-from auth import require_user, User, require_manager
-from api.schemas import ScanCreate, ScanResponse, FindingResponse
+from database.models import Approval, Engagement, Evidence, Scan, ScanAsset, ScanEvent, ScanModule, ScanProfile, ScanSafetyState, Asset, Project, Finding, AuditLog
+from auth import get_project_or_404, get_scan_or_404, project_access_clause, require_user, User, require_manager
+from api.schemas import EmergencyStopRequest, FindingResponse, ScanCreate, ScanResponse, ScanRetestRequest, ScanUpdate
+from api.routes.approvals import approval_is_valid, expire_pending_approval
 from scans.tools import SCANNER_TOOL_CATALOG
 
 router = APIRouter()
@@ -26,9 +27,28 @@ async def create_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    project = await db.execute(select(Project).where(Project.id == data.project_id))
-    if not project.scalar_one_or_none():
-        raise HTTPException(status_code=404, detail="Project not found")
+    await get_project_or_404(db, data.project_id, current_user)
+    if data.engagement_id:
+        engagement = (
+            await db.execute(
+                select(Engagement).where(
+                    Engagement.id == data.engagement_id,
+                    Engagement.project_id == data.project_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not engagement:
+            raise HTTPException(status_code=400, detail="Engagement must belong to the scan project")
+    if data.asset_ids:
+        assets = (
+            await db.execute(
+                select(Asset).where(
+                    Asset.id.in_(data.asset_ids), Asset.project_id == data.project_id
+                )
+            )
+        ).scalars().all()
+        if len({asset.id for asset in assets}) != len(set(data.asset_ids)):
+            raise HTTPException(status_code=400, detail="All scan assets must belong to the scan project")
 
     profile = None
     if data.scan_profile_id:
@@ -82,13 +102,13 @@ async def list_scans(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    query = select(Scan)
+    if project_id:
+        await get_project_or_404(db, project_id, current_user)
+    query = select(Scan).join(Project, Project.id == Scan.project_id).where(project_access_clause(current_user))
     if project_id:
         query = query.where(Scan.project_id == project_id)
     if status_filter:
         query = query.where(Scan.status == status_filter)
-    if current_user.role not in ("admin", "manager"):
-        query = query.where(Scan.requested_by == current_user.id)
     result = await db.execute(query.order_by(Scan.created_at.desc()))
     return result.scalars().all()
 
@@ -129,27 +149,37 @@ async def get_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalar_one_or_none()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
-    return scan
+    return await get_scan_or_404(db, scan_id, current_user)
 
 
 @router.patch("/{scan_id}", response_model=ScanResponse)
 async def update_scan(
     scan_id: str,
-    data: dict,
+    data: ScanUpdate,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    scan = await _get_scan_or_404(db, scan_id)
-    allowed = {"name", "assessment_mode", "scan_category", "scan_depth", "engagement_id", "scan_profile_id", "config"}
-    for key, value in data.items():
-        if key in allowed:
-            setattr(scan, key, value)
-    db.add(ScanEvent(scan_id=scan.id, event_type="scan_updated", severity="info", summary="Scan configuration updated.", details_json={"fields": sorted(set(data).intersection(allowed))}))
-    db.add(AuditLog(project_id=scan.project_id, scan_id=scan.id, actor_id=current_user.id, event_type="scan", action="update_scan", details={"fields": list(data.keys())}))
+    scan = await get_scan_or_404(db, scan_id, current_user)
+    updates = data.model_dump(exclude_unset=True)
+    security_fields = {"assessment_mode", "scan_category", "scan_depth", "engagement_id", "scan_profile_id", "config"}
+    changed_security_fields = _changed_fields(scan, updates, security_fields)
+    if updates.get("engagement_id"):
+        engagement = (
+            await db.execute(
+                select(Engagement).where(
+                    Engagement.id == updates["engagement_id"],
+                    Engagement.project_id == scan.project_id,
+                )
+            )
+        ).scalar_one_or_none()
+        if not engagement:
+            raise HTTPException(status_code=400, detail="Engagement must belong to the scan project")
+    for key, value in updates.items():
+        setattr(scan, key, value)
+    if changed_security_fields:
+        await _supersede_scan_approvals(db, scan, current_user, changed_security_fields)
+    db.add(ScanEvent(scan_id=scan.id, event_type="scan_updated", severity="info", summary="Scan configuration updated.", details_json={"fields": sorted(updates)}))
+    db.add(AuditLog(project_id=scan.project_id, scan_id=scan.id, actor_id=current_user.id, event_type="scan", action="update_scan", details={"fields": sorted(updates)}))
     await db.commit()
     await db.refresh(scan)
     return scan
@@ -161,7 +191,7 @@ async def validate_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    scan = await _get_scan_or_404(db, scan_id)
+    scan = await get_scan_or_404(db, scan_id, current_user)
     result = await _validate_scan_ready(db, scan)
     db.add(ScanEvent(scan_id=scan.id, event_type="scope_validation", severity="info" if result["valid"] else "warning", summary="Scope, authorization, and safety validation completed.", details_json=result))
     await db.commit()
@@ -174,17 +204,42 @@ async def request_scan_approval(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    scan = await _get_scan_or_404(db, scan_id)
-    existing = await db.execute(select(Approval).where(Approval.scan_id == scan.id, Approval.status == "pending"))
-    approval = existing.scalar_one_or_none()
+    scan = await get_scan_or_404(db, scan_id, current_user)
+    now = datetime.utcnow()
+    active_approvals = (
+        await db.execute(
+            select(Approval).where(
+                Approval.scan_id == scan.id,
+                Approval.status.in_(["pending", "approved"]),
+            )
+        )
+    ).scalars().all()
+    pending_approval = None
+    approval = None
+    for item in active_approvals:
+        if expire_pending_approval(item, now):
+            db.add(AuditLog(project_id=scan.project_id, scan_id=scan.id, actor_id=current_user.id, event_type="approval", action="scan_approval_expired", details={"approval_id": str(item.id)}))
+        elif approval is None and approval_is_valid(item, now):
+            approval = item
+        elif pending_approval is None and item.status == "pending":
+            pending_approval = item
+    approval = approval or pending_approval
     if not approval:
-        approval = Approval(scan_id=scan.id, action="scan_launch", risk_level=_scan_risk(scan), requested_by=current_user.id, reason="Controlled scan launch review requested.")
+        approval = Approval(
+            scan_id=scan.id,
+            action="scan_launch",
+            risk_level=_scan_risk(scan),
+            requested_by=current_user.id,
+            reason="Controlled scan launch review requested.",
+            expires_at=now + timedelta(hours=24),
+        )
         db.add(approval)
-    scan.status = "pending_review"
+        await db.flush()
+    scan.status = "approved" if approval_is_valid(approval, now) else "pending_review"
     db.add(ScanEvent(scan_id=scan.id, event_type="approval_requested", severity="warning", summary="Scan launch review requested.", details_json={"approval_action": "scan_launch"}))
     db.add(AuditLog(project_id=scan.project_id, scan_id=scan.id, actor_id=current_user.id, event_type="approval", action="scan_approval_requested", details={"risk_level": approval.risk_level}))
     await db.commit()
-    return {"status": "requested", "approval_id": str(approval.id)}
+    return {"status": "approved" if approval_is_valid(approval, now) else "requested", "approval_id": str(approval.id)}
 
 
 @router.post("/{scan_id}/launch", response_model=ScanResponse)
@@ -193,9 +248,6 @@ async def launch_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    validation = await validate_scan(scan_id, db, current_user)
-    if not validation["valid"]:
-        raise HTTPException(status_code=400, detail={"message": "Scan cannot launch until blocking validation issues are resolved", "blocking_reasons": validation["blocking_reasons"]})
     return await start_scan(scan_id, db, current_user)
 
 
@@ -205,12 +257,12 @@ async def start_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalar_one_or_none()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = await get_scan_or_404(db, scan_id, current_user)
     if scan.status not in ("draft", "approved"):
         raise HTTPException(status_code=400, detail=f"Cannot start scan with status: {scan.status}")
+    validation = await _validate_scan_ready(db, scan)
+    if not validation["valid"]:
+        raise HTTPException(status_code=400, detail={"message": "Scan cannot launch until blocking validation issues are resolved", "blocking_reasons": validation["blocking_reasons"]})
 
     scan.status = "pending"
     await db.commit()
@@ -235,7 +287,7 @@ async def resume_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    scan = await _get_scan_or_404(db, scan_id)
+    scan = await get_scan_or_404(db, scan_id, current_user)
     if scan.status != "paused":
         raise HTTPException(status_code=400, detail="Only paused scans can be resumed")
     scan.status = "running"
@@ -252,10 +304,7 @@ async def pause_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager),
 ):
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalar_one_or_none()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = await get_scan_or_404(db, scan_id, current_user)
     if scan.status != "running":
         raise HTTPException(status_code=400, detail="Only running scans can be paused")
     scan.status = "paused"
@@ -267,13 +316,13 @@ async def pause_scan(
 @router.post("/{scan_id}/emergency-stop", response_model=ScanResponse)
 async def emergency_stop_scan(
     scan_id: str,
-    data: dict,
+    data: EmergencyStopRequest,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager),
 ):
-    if data.get("confirmation") != "STOP SCAN":
+    if data.confirmation != "STOP SCAN":
         raise HTTPException(status_code=400, detail="Typed confirmation STOP SCAN is required")
-    scan = await _get_scan_or_404(db, scan_id)
+    scan = await get_scan_or_404(db, scan_id, current_user)
     if scan.celery_task_id:
         from workers.celery_app import app
         app.control.revoke(scan.celery_task_id, terminate=True, signal="SIGKILL")
@@ -295,10 +344,7 @@ async def cancel_scan(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalar_one_or_none()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = await get_scan_or_404(db, scan_id, current_user)
     if scan.status in ("completed", "cancelled", "failed"):
         raise HTTPException(status_code=400, detail=f"Cannot cancel scan with status: {scan.status}")
 
@@ -320,10 +366,7 @@ async def kill_scan(
     current_user: User = Depends(require_manager),
 ):
     """Kill switch - immediately terminate a running scan"""
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalar_one_or_none()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = await get_scan_or_404(db, scan_id, current_user)
 
     if scan.celery_task_id:
         from workers.celery_app import app
@@ -342,10 +385,7 @@ async def get_scan_progress(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalar_one_or_none()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = await get_scan_or_404(db, scan_id, current_user)
 
     modules = await db.execute(
         select(ScanModule).where(ScanModule.scan_id == scan_id)
@@ -369,21 +409,21 @@ async def get_scan_progress(
 
 @router.get("/{scan_id}/modules")
 async def get_scan_modules(scan_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
-    await _get_scan_or_404(db, scan_id)
+    await get_scan_or_404(db, scan_id, current_user)
     result = await db.execute(select(ScanModule).where(ScanModule.scan_id == scan_id).order_by(ScanModule.started_at, ScanModule.id))
     return [_module_payload(module, index + 1) for index, module in enumerate(result.scalars().all())]
 
 
 @router.get("/{scan_id}/events")
 async def get_scan_events(scan_id: str, limit: int = 100, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
-    await _get_scan_or_404(db, scan_id)
+    await get_scan_or_404(db, scan_id, current_user)
     result = await db.execute(select(ScanEvent).where(ScanEvent.scan_id == scan_id).order_by(ScanEvent.created_at.desc()).limit(limit))
     return [_event_payload(event) for event in result.scalars().all()]
 
 
 @router.get("/{scan_id}/safety")
 async def get_scan_safety(scan_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
-    scan = await _get_scan_or_404(db, scan_id)
+    scan = await get_scan_or_404(db, scan_id, current_user)
     safety = await _get_or_create_safety(db, scan.id)
     await db.commit()
     return _safety_payload(safety)
@@ -391,7 +431,7 @@ async def get_scan_safety(scan_id: str, db: AsyncSession = Depends(get_db), curr
 
 @router.get("/{scan_id}/evidence")
 async def get_scan_evidence(scan_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
-    await _get_scan_or_404(db, scan_id)
+    await get_scan_or_404(db, scan_id, current_user)
     result = await db.execute(select(Evidence, Finding).join(Finding, Finding.id == Evidence.finding_id).where(Finding.scan_id == scan_id).order_by(Evidence.created_at.desc()))
     rows = result.all()
     counts: dict[str, int] = {}
@@ -405,7 +445,7 @@ async def get_scan_evidence(scan_id: str, db: AsyncSession = Depends(get_db), cu
 
 @router.get("/{scan_id}/process")
 async def get_scan_process(scan_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
-    scan = await _get_scan_or_404(db, scan_id)
+    scan = await get_scan_or_404(db, scan_id, current_user)
     modules = (await db.execute(select(ScanModule).where(ScanModule.scan_id == scan_id))).scalars().all()
     findings = (await db.execute(select(Finding).where(Finding.scan_id == scan_id))).scalars().all()
     evidence = await get_scan_evidence(scan_id, db, current_user)
@@ -422,7 +462,7 @@ async def get_scan_process(scan_id: str, db: AsyncSession = Depends(get_db), cur
 
 @router.get("/{scan_id}/results")
 async def get_scan_results(scan_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
-    scan = await _get_scan_or_404(db, scan_id)
+    scan = await get_scan_or_404(db, scan_id, current_user)
     findings = (await db.execute(select(Finding).options(selectinload(Finding.evidence_items)).where(Finding.scan_id == scan_id).order_by(Finding.created_at.desc()))).scalars().all()
     evidence = await get_scan_evidence(scan_id, db, current_user)
     modules = (await db.execute(select(ScanModule).where(ScanModule.scan_id == scan_id))).scalars().all()
@@ -442,7 +482,7 @@ async def get_scan_results(scan_id: str, db: AsyncSession = Depends(get_db), cur
 
 @router.get("/{scan_id}/stream")
 async def stream_scan(scan_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
-    await _get_scan_or_404(db, scan_id)
+    await get_scan_or_404(db, scan_id, current_user)
 
     async def event_generator():
         for _ in range(60):
@@ -457,7 +497,7 @@ async def stream_scan(scan_id: str, db: AsyncSession = Depends(get_db), current_
 
 @router.post("/{scan_id}/generate-report")
 async def generate_scan_report(scan_id: str, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
-    scan = await _get_scan_or_404(db, scan_id)
+    scan = await get_scan_or_404(db, scan_id, current_user)
     findings = (await db.execute(select(Finding).where(Finding.scan_id == scan_id, Finding.status.in_(["confirmed", "verified", "open"])))).scalars().all()
     if not findings:
         raise HTTPException(status_code=400, detail="Report draft requires at least one reviewed or verified finding")
@@ -468,9 +508,9 @@ async def generate_scan_report(scan_id: str, db: AsyncSession = Depends(get_db),
 
 
 @router.post("/{scan_id}/create-retest")
-async def create_scan_retest(scan_id: str, data: dict | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
-    scan = await _get_scan_or_404(db, scan_id)
-    finding_ids = (data or {}).get("finding_ids") or []
+async def create_scan_retest(scan_id: str, data: ScanRetestRequest | None = None, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
+    scan = await get_scan_or_404(db, scan_id, current_user)
+    finding_ids = data.finding_ids if data else []
     db.add(ScanEvent(scan_id=scan.id, event_type="retest_requested", severity="info", summary="Retest workflow requested for selected findings.", details_json={"finding_ids": finding_ids}))
     db.add(AuditLog(project_id=scan.project_id, scan_id=scan.id, actor_id=current_user.id, event_type="retest", action="create_retest", details={"finding_ids": finding_ids}))
     await db.commit()
@@ -483,20 +523,13 @@ async def get_scan_findings(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
+    await get_scan_or_404(db, scan_id, current_user)
     result = await db.execute(
         select(Finding)
         .where(Finding.scan_id == scan_id)
         .order_by(Finding.severity.desc(), Finding.created_at.desc())
     )
     return result.scalars().all()
-
-
-async def _get_scan_or_404(db: AsyncSession, scan_id: str) -> Scan:
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalar_one_or_none()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
-    return scan
 
 
 async def _get_or_create_safety(db: AsyncSession, scan_id) -> ScanSafetyState:
@@ -522,14 +555,19 @@ async def _validate_scan_ready(db: AsyncSession, scan: Scan) -> dict:
     asset_ids = [row.asset_id for row in scan_assets]
     if asset_ids:
         assets = (await db.execute(select(Asset).where(Asset.id.in_(asset_ids)))).scalars().all()
+        if len(assets) != len(set(asset_ids)):
+            blocking_reasons.append("One or more selected assets no longer exist.")
         for asset in assets:
+            if asset.project_id != scan.project_id:
+                blocking_reasons.append(f"Asset {asset.value} does not belong to the scan project.")
             if asset.scope_status != "in_scope" or asset.approval_status != "approved":
                 blocking_reasons.append(f"Asset {asset.value} is not approved and in scope.")
     if scan.engagement_id:
-        from database.models import Engagement
         engagement = (await db.execute(select(Engagement).where(Engagement.id == scan.engagement_id))).scalar_one_or_none()
         if not engagement:
             blocking_reasons.append("Selected engagement does not exist.")
+        elif engagement.project_id != scan.project_id:
+            blocking_reasons.append("Selected engagement does not belong to the scan project.")
         elif engagement.authorization_status != "authorized":
             blocking_reasons.append("Selected engagement is not authorized.")
         elif engagement.end_date and engagement.end_date < datetime.utcnow():
@@ -544,9 +582,11 @@ async def _validate_scan_ready(db: AsyncSession, scan: Scan) -> dict:
             blocking_reasons.append("Selected scan profile is not enabled.")
     approval_required = _approval_required(scan, profile)
     if approval_required:
-        approval = (await db.execute(select(Approval).where(Approval.scan_id == scan.id, Approval.status == "approved"))).scalar_one_or_none()
-        if not approval:
-            blocking_reasons.append("Required scan approval has not been granted.")
+        approvals = (
+            await db.execute(select(Approval).where(Approval.scan_id == scan.id, Approval.status == "approved"))
+        ).scalars().all()
+        if not any(approval_is_valid(approval) for approval in approvals):
+            blocking_reasons.append("Required scan approval has not been granted or has expired.")
 
     prohibited_actions = ["denial_of_service", "brute_force", "credential_theft", "malware", "persistent_access", "data_exfiltration", "production_data_modification", "unauthorized_pivoting"]
     selected = set((scan.config or {}).get("advanced_options") or [])
@@ -565,9 +605,46 @@ async def _validate_scan_ready(db: AsyncSession, scan: Scan) -> dict:
 
 
 def _approval_required(scan: Scan, profile: ScanProfile | None) -> bool:
-    if profile and profile.risk_level in ("high", "critical"):
-        return True
-    return scan.scan_depth in ("deep", "custom") or scan.assessment_mode in ("gray_box", "white_box")
+    """Every scan requires Security Team approval before it can launch."""
+    return True
+
+
+async def _supersede_scan_approvals(db: AsyncSession, scan: Scan, current_user: User, fields: set[str]) -> None:
+    approvals = (
+        await db.execute(
+            select(Approval).where(
+                Approval.scan_id == scan.id,
+                Approval.status.in_(["pending", "approved"]),
+            )
+        )
+    ).scalars().all()
+    for approval in approvals:
+        approval.status = "superseded"
+        approval.decided_at = datetime.utcnow()
+        db.add(AuditLog(
+            project_id=scan.project_id,
+            scan_id=scan.id,
+            actor_id=current_user.id,
+            event_type="approval",
+            action="scan_approval_superseded",
+            details={"approval_id": str(approval.id), "fields": sorted(fields)},
+        ))
+    scan.approved_by = None
+    scan.status = "draft"
+    db.add(ScanEvent(
+        scan_id=scan.id,
+        event_type="approval_superseded",
+        severity="warning",
+        summary="Security-relevant scan changes require a new approval.",
+        details_json={"fields": sorted(fields), "approval_count": len(approvals)},
+    ))
+
+
+def _changed_fields(resource, updates: dict, security_fields: set[str]) -> set[str]:
+    return {
+        key for key in security_fields.intersection(updates)
+        if getattr(resource, key) != updates[key]
+    }
 
 
 def _scan_risk(scan: Scan) -> str:
@@ -808,10 +885,10 @@ def _module_description(module_name: str) -> str:
 def _default_modules_for_scan(scan_category: str, scan_depth: str) -> list[str]:
     common = ["asset_discovery", "cve_enrichment", "evidence_collection", "report_generation"]
     modules_by_category = {
-        "vulnerability_scan": ["passive_asset_discovery", "http_probe", "tcp_port_scan", "service_detection", "security_headers", "known_vulnerabilities", *common],
+        "vulnerability_scan": ["passive_asset_discovery", "http_probe", "tcp_port_scan", "service_detection", "security_headers", *common],
         "website": ["asset_discovery", "http_probe", "security_headers", "tls_check", "technology_detection", "owasp_top_10", "evidence_collection", "ai_analysis", "report_generation"],
         "api_security": ["api_discovery", "owasp_api_top_10", "authentication_testing", "rate_limiting_check", "input_validation", "token_handling", "evidence_collection", "report_generation"],
-        "network": ["host_discovery", "tcp_port_scan", "service_detection", "version_detection", "tls_services", "known_vulnerabilities", "cve_enrichment", "report_generation"],
+        "network": ["host_discovery", "tcp_port_scan", "service_detection", "version_detection", "tls_services", "cve_enrichment", "report_generation"],
         "container": ["container_scan", "dependency_scan", "trivy_scan", "grype_scan", "cve_enrichment", "evidence_collection", "report_generation"],
     }
     modules = modules_by_category.get(scan_category, modules_by_category["vulnerability_scan"])

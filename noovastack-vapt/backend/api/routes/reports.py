@@ -12,7 +12,7 @@ from io import BytesIO
 
 from database import get_db
 from database.models import Asset, Finding, Project, Scan, ScanAsset, ScanModule
-from auth import require_user, User
+from auth import get_scan_or_404, require_user, User
 from api.schemas import ReportGenerateRequest, ReportResponse
 from config import settings
 from reporting.professional_report import (
@@ -43,10 +43,7 @@ async def generate_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Scan).where(Scan.id == request.scan_id))
-    scan = result.scalar_one_or_none()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = await get_scan_or_404(db, request.scan_id, current_user)
 
     from workers.celery_app import generate_report_task
     task = generate_report_task.delay(
@@ -64,12 +61,14 @@ async def generate_report(
 async def get_scan_report_data(
     scan_id: str,
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalar_one_or_none()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = await get_scan_or_404(db, scan_id, current_user)
+    return await _build_scan_report_data(db, scan)
 
+
+async def _build_scan_report_data(db: AsyncSession, scan: Scan):
+    scan_id = scan.id
     project_result = await db.execute(select(Project).where(Project.id == scan.project_id))
     project = project_result.scalar_one_or_none()
 
@@ -251,10 +250,7 @@ async def get_scan_report_ai_improvements(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    result = await db.execute(select(Scan).where(Scan.id == scan_id))
-    scan = result.scalar_one_or_none()
-    if not scan:
-        raise HTTPException(status_code=404, detail="Scan not found")
+    scan = await get_scan_or_404(db, scan_id, current_user)
 
     asset_result = await db.execute(
         select(Asset)
@@ -283,8 +279,14 @@ async def export_scan_report(
     scan_id: str,
     format: str = "pdf",
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_user),
 ):
-    report = _report_export_payload(await get_scan_report_data(scan_id, db))
+    scan = await get_scan_or_404(db, scan_id, current_user)
+    report = _report_export_payload(await _build_scan_report_data(db, scan))
+    return _render_report_export(scan_id, format, report)
+
+
+def _render_report_export(scan_id, format: str, report: dict):
     normalized = format.lower()
     filename = f"noovastack-vapt-report-{scan_id}"
 
@@ -763,7 +765,8 @@ async def get_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    return await get_scan_report_data(report_id, db)
+    scan = await get_scan_or_404(db, report_id, current_user)
+    return await _build_scan_report_data(db, scan)
 
 
 @router.post("/{report_id}/export")
@@ -773,4 +776,6 @@ async def export_report(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    return await export_scan_report(report_id, format, db)
+    scan = await get_scan_or_404(db, report_id, current_user)
+    report = _report_export_payload(await _build_scan_report_data(db, scan))
+    return _render_report_export(report_id, format, report)

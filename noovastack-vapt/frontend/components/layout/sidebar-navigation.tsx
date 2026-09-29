@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { ChevronDown } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { useEffect, useState, type ComponentType, type ReactNode } from 'react';
 import { NstLogo } from '@/components/branding/nst-logo';
 import { BRAND } from '@/lib/branding';
@@ -20,96 +20,257 @@ type SidebarItem = {
   children?: readonly SidebarChild[];
 };
 
-export function SidebarNavigation({ collapsed, onNavigate }: { collapsed: boolean; onNavigate?: () => void }) {
+// Section groupings for visual dividers
+const SECTION_BEFORE: Record<string, string> = {
+  '/findings': 'Analysis',
+  '/ai-agents': 'Tools',
+  '/audit-logs': 'Governance',
+};
+
+export function SidebarNavigation({
+  collapsed,
+  onNavigate,
+  mobile = false,
+}: {
+  collapsed: boolean;
+  onNavigate?: () => void;
+  mobile?: boolean;
+}) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { user } = useAuth();
-  const visible = navItems.filter((item) => canAccess(user?.role, item.roles)) as readonly SidebarItem[];
+  const visible = navItems.filter((item) =>
+    canAccess(user?.role, item.roles)
+  ) as readonly SidebarItem[];
   const adminItem = visible.find((item) => item.href === '/administration');
   const mainItems = visible.filter((item) => item.href !== '/administration');
 
-  return <Sidebar collapsed={collapsed}>
-    <SidebarHeader collapsed={collapsed} />
-    <nav className="flex-1 space-y-1 overflow-y-auto p-3" aria-label="Main navigation">
-      {mainItems.map((item) => item.children?.length ? <SidebarAccordion key={item.href ?? item.label} item={item} collapsed={collapsed} pathname={pathname} searchParams={searchParams} onNavigate={onNavigate} /> : <SidebarParentItem key={item.href ?? item.label} item={item} active={isParentActive(item, pathname)} collapsed={collapsed} onNavigate={onNavigate} />)}
-    </nav>
-    <SidebarFooter item={adminItem} collapsed={collapsed} pathname={pathname} onNavigate={onNavigate} />
-  </Sidebar>;
-}
+  return (
+    <aside
+      className={cn(
+        'flex h-full flex-col bg-[#0F1C2E] transition-all duration-200',
+        collapsed ? 'w-[60px]' : mobile ? 'w-[220px]' : 'w-[220px] xl:w-[240px]'
+      )}
+    >
+      {/* Logo */}
+      <Link
+        href="/dashboard"
+        className={cn(
+          'flex h-16 shrink-0 items-center border-b border-white/10 px-4 gap-3',
+        )}
+        aria-label={BRAND.productName}
+      >
+        <NstLogo
+          variant="mark"
+          className="h-8 w-8 shrink-0"
+          markClassName="h-8 w-8"
+          showTextFallback={false}
+        />
+        {!collapsed && (
+          <div className="min-w-0">
+            <p className="truncate text-sm font-bold text-white">{BRAND.shortName}</p>
+            <p className="truncate text-[11px] font-medium text-white/50">{BRAND.productDescriptor}</p>
+          </div>
+        )}
+      </Link>
 
-function Sidebar({ collapsed, children }: { collapsed: boolean; children: ReactNode }) {
-  return <aside className={cn('sidebar-shell flex h-full flex-col border-r border-[#DCE3EA] bg-white opacity-100 transition-all', collapsed ? 'w-[76px]' : 'w-[264px]')}>{children}</aside>;
-}
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto overflow-x-hidden px-2 py-3 space-y-0.5" aria-label="Main navigation">
+        {mainItems.map((item) => {
+          const sectionLabel = !collapsed ? SECTION_BEFORE[item.href ?? ''] : undefined;
+          return (
+            <div key={item.href ?? item.label}>
+              {sectionLabel && (
+                <p className="mb-1 mt-3 px-3 text-[10px] font-semibold uppercase tracking-widest text-white/30">
+                  {sectionLabel}
+                </p>
+              )}
+              {item.children?.length ? (
+                <SidebarAccordion
+                  item={item}
+                  collapsed={collapsed}
+                  pathname={pathname}
+                  searchParams={searchParams}
+                  onNavigate={onNavigate}
+                />
+              ) : (
+                <SidebarLink
+                  item={item}
+                  active={isParentActive(item, pathname)}
+                  collapsed={collapsed}
+                  onNavigate={onNavigate}
+                />
+              )}
+            </div>
+          );
+        })}
+      </nav>
 
-function SidebarHeader({ collapsed }: { collapsed: boolean }) {
-  return <Link href="/dashboard" className="sidebar-item flex h-16 items-center gap-3 border-b border-[#DCE3EA] px-4" aria-label={BRAND.productName}>
-    <NstLogo variant="mark" className="h-11 w-11 shrink-0" markClassName="h-11 w-11" showTextFallback={false} />
-    {!collapsed ? <div className="min-w-0 leading-tight"><p className="sidebar-brand-title truncate font-bold text-[#102033]">{BRAND.shortName}</p><p className="sidebar-brand-subtitle text-xs font-medium text-[#667085]">{BRAND.productDescriptor}</p></div> : null}
-  </Link>;
-}
-
-function SidebarAccordion({ item, collapsed, pathname, searchParams, onNavigate }: { item: SidebarItem; collapsed: boolean; pathname: string; searchParams: URLSearchParams; onNavigate?: () => void }) {
-  const parentActive = isParentActive(item, pathname);
-  const childActive = item.children?.some((child) => isChildActive(child, pathname, searchParams)) ?? false;
-  const [expanded, setExpanded] = useState(parentActive || childActive);
-
-  useEffect(() => {
-    if (parentActive || childActive) setExpanded(true);
-  }, [childActive, parentActive]);
-
-  if (collapsed) return <SidebarParentItem item={item} active={parentActive || childActive} collapsed onNavigate={onNavigate} />;
-
-  return <div className={cn('rounded-xl transition-colors', expanded && 'sidebar-accordion-expanded bg-[#EAF4FB] p-2')}>
-    <button type="button" aria-expanded={expanded} onClick={() => setExpanded((value) => !value)} className={parentItemClass(parentActive || childActive, expanded)}>
-      <SidebarParentContent item={item} collapsed={false} active={parentActive || childActive} expanded={expanded} />
-    </button>
-    {expanded ? <SidebarSubmenu item={item} pathname={pathname} searchParams={searchParams} onNavigate={onNavigate} /> : null}
-  </div>;
-}
-
-function SidebarParentItem({ item, active, collapsed, onNavigate }: { item: SidebarItem; active: boolean; collapsed: boolean; onNavigate?: () => void }) {
-  const href = item.href ?? '#';
-  return <Link href={href} title={item.label} onClick={onNavigate} aria-current={active ? 'page' : undefined} className={parentItemClass(active, false, collapsed)}>
-    <SidebarParentContent item={item} collapsed={collapsed} active={active} />
-  </Link>;
-}
-
-function SidebarParentContent({ item, collapsed, active, expanded }: { item: SidebarItem; collapsed: boolean; active: boolean; expanded?: boolean }) {
-  const Icon = item.icon;
-  return <>
-    <Icon className={cn('h-[21px] w-[21px] shrink-0 transition-colors', active ? 'text-[#0B5E9E]' : 'text-[#475467] group-hover:text-[#0B5E9E]')} />
-    {!collapsed ? <span className="flex-1 truncate text-left">{item.label}</span> : null}
-    {!collapsed && item.children?.length ? <ChevronDown aria-hidden="true" className={cn('h-[18px] w-[18px] shrink-0 text-[#667085] transition-transform group-hover:text-[#0B5E9E]', expanded && 'rotate-180')} /> : null}
-    {!collapsed && item.children?.length ? <span className="sr-only">{expanded ? 'Collapse' : 'Expand'} {item.label}</span> : null}
-  </>;
-}
-
-function SidebarSubmenu({ item, pathname, searchParams, onNavigate }: { item: SidebarItem; pathname: string; searchParams: URLSearchParams; onNavigate?: () => void }) {
-  return <div className="mt-1 space-y-0.5" role="group" aria-label={`${item.label} submenu`}>
-    {item.children?.map((child) => <SidebarSubmenuItem key={child.href} child={child} active={isChildActive(child, pathname, searchParams)} onNavigate={onNavigate} />)}
-  </div>;
-}
-
-function SidebarSubmenuItem({ child, active, onNavigate }: { child: SidebarChild; active: boolean; onNavigate?: () => void }) {
-  return <Link href={child.href} onClick={onNavigate} aria-current={active ? 'page' : undefined} className={cn('sidebar-item sidebar-submenu-item flex min-h-9 items-center rounded-md py-2 pl-[52px] pr-3 text-sm transition-colors', active ? 'sidebar-submenu-active border-l-[3px] border-[#0B5E9E] bg-[rgba(11,94,158,0.08)] font-semibold text-[#0B5E9E]' : 'border-l-[3px] border-transparent text-[#667085] hover:bg-[#F2F6FA] hover:text-[#0B5E9E]')}>
-    {child.label}
-  </Link>;
-}
-
-function SidebarFooter({ item, collapsed, pathname, onNavigate }: { item?: SidebarItem; collapsed: boolean; pathname: string; onNavigate?: () => void }) {
-  if (!item) return null;
-  return <div className="border-t border-[#DCE3EA] p-3"><SidebarParentItem item={item} active={pathname === item.href} collapsed={collapsed} onNavigate={onNavigate} /></div>;
-}
-
-function parentItemClass(active: boolean, expanded = false, collapsed = false) {
-  return cn(
-    'sidebar-item sidebar-parent group flex min-h-12 w-full items-center rounded-xl text-sm transition-colors',
-    collapsed ? 'justify-center px-0' : 'gap-[14px] px-4',
-    active ? 'sidebar-parent-active font-semibold text-[#0B5E9E]' : 'font-medium text-[#475467] hover:bg-[#F2F6FA] hover:text-[#0B5E9E]',
-    expanded && 'hover:bg-transparent',
+      {/* Footer — admin */}
+      {adminItem && (
+        <div className="shrink-0 border-t border-white/10 px-2 py-3">
+          <SidebarLink
+            item={adminItem}
+            active={pathname === adminItem.href}
+            collapsed={collapsed}
+            onNavigate={onNavigate}
+          />
+        </div>
+      )}
+    </aside>
   );
 }
 
+/* ── Accordion (parent with children) ───────────────────────── */
+function SidebarAccordion({
+  item,
+  collapsed,
+  pathname,
+  searchParams,
+  onNavigate,
+}: {
+  item: SidebarItem;
+  collapsed: boolean;
+  pathname: string;
+  searchParams: URLSearchParams;
+  onNavigate?: () => void;
+}) {
+  const parentActive = isParentActive(item, pathname);
+  const childActive = item.children?.some((c) => isChildActive(c, pathname, searchParams)) ?? false;
+  const anyActive = parentActive || childActive;
+  const [open, setOpen] = useState(anyActive);
+
+  useEffect(() => {
+    if (anyActive) setOpen(true);
+  }, [anyActive]);
+
+  if (collapsed) {
+    return <SidebarLink item={item} active={anyActive} collapsed onNavigate={onNavigate} />;
+  }
+
+  return (
+    <div>
+      <button
+        type="button"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+        className={navItemClass(anyActive, false)}
+      >
+        <NavIcon Icon={item.icon} active={anyActive} />
+        <span className="flex-1 truncate text-left text-[13px]">{item.label}</span>
+        <ChevronRight
+          className={cn(
+            'h-3.5 w-3.5 shrink-0 text-white/30 transition-transform',
+            open && 'rotate-90',
+            anyActive && 'text-white/60',
+          )}
+        />
+      </button>
+
+      {open && (
+        <div className="mt-0.5 mb-1 ml-3 border-l border-white/10 pl-3 space-y-0.5">
+          {item.children?.map((child) => (
+            <ChildLink
+              key={child.href}
+              child={child}
+              active={isChildActive(child, pathname, searchParams)}
+              onNavigate={onNavigate}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Plain nav link ─────────────────────────────────────────── */
+function SidebarLink({
+  item,
+  active,
+  collapsed,
+  onNavigate,
+}: {
+  item: SidebarItem;
+  active: boolean;
+  collapsed: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <Link
+      href={item.href ?? '#'}
+      title={item.label}
+      onClick={onNavigate}
+      aria-current={active ? 'page' : undefined}
+      className={navItemClass(active, collapsed)}
+    >
+      <NavIcon Icon={item.icon} active={active} />
+      {!collapsed && (
+        <span className="flex-1 truncate text-[13px]">{item.label}</span>
+      )}
+    </Link>
+  );
+}
+
+/* ── Child link ─────────────────────────────────────────────── */
+function ChildLink({
+  child,
+  active,
+  onNavigate,
+}: {
+  child: SidebarChild;
+  active: boolean;
+  onNavigate?: () => void;
+}) {
+  return (
+    <Link
+      href={child.href}
+      onClick={onNavigate}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'flex h-8 items-center rounded-md px-2.5 text-[12px] transition-colors',
+        active
+          ? 'bg-white/10 font-semibold text-white'
+          : 'font-medium text-white/50 hover:bg-white/5 hover:text-white/80',
+      )}
+    >
+      {active && (
+        <span className="mr-2 h-1.5 w-1.5 rounded-full bg-[#3B82F6]" />
+      )}
+      {child.label}
+    </Link>
+  );
+}
+
+/* ── Icon wrapper ───────────────────────────────────────────── */
+function NavIcon({
+  Icon,
+  active,
+}: {
+  Icon: ComponentType<{ className?: string }>;
+  active: boolean;
+}) {
+  return (
+    <Icon
+      className={cn(
+        'h-[17px] w-[17px] shrink-0 transition-colors',
+        active ? 'text-[#60A5FA]' : 'text-white/40 group-hover:text-white/70',
+      )}
+    />
+  );
+}
+
+/* ── Item class ─────────────────────────────────────────────── */
+function navItemClass(active: boolean, collapsed: boolean) {
+  return cn(
+    'group flex h-9 w-full items-center rounded-lg transition-colors',
+    collapsed ? 'justify-center px-2' : 'gap-2.5 px-3',
+    active
+      ? 'bg-white/10 font-semibold text-white'
+      : 'font-medium text-white/55 hover:bg-white/5 hover:text-white/90',
+  );
+}
+
+/* ── Helpers ────────────────────────────────────────────────── */
 function isParentActive(item: SidebarItem, pathname: string) {
   if (!item.href) return false;
   if (item.href === '/dashboard') return pathname === item.href;
@@ -121,9 +282,9 @@ function isChildActive(child: SidebarChild, pathname: string, searchParams: URLS
   if (pathname !== childPath) return false;
   if (!childSearch) return !hasSectionQuery(searchParams);
   const expected = new URLSearchParams(childSearch);
-  return Array.from(expected.entries()).every(([key, value]) => searchParams.get(key) === value);
+  return Array.from(expected.entries()).every(([k, v]) => searchParams.get(k) === v);
 }
 
-function hasSectionQuery(searchParams: URLSearchParams) {
-  return ['status', 'scope'].some((key) => searchParams.has(key));
+function hasSectionQuery(sp: URLSearchParams) {
+  return ['status', 'scope'].some((k) => sp.has(k));
 }

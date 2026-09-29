@@ -27,7 +27,7 @@ dist/
 *.tsbuildinfo
 
 # Generated reports and outputs
-reports/
+noovastack-vapt/reports/
 results/
 evidence/
 *.pdf
@@ -49,6 +49,8 @@ Thumbs.db
 tmp/
 temp/
 *.tmp
+
+
 
 # Local untrusted reference clones
 noovastack-vapt/workflows/local-ai-agent-program/external-skills/hack-skills/

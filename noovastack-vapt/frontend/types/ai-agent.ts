@@ -107,3 +107,42 @@ export interface AIAgentAuditEvent {
   timestamp: string;
   details: string;
 }
+
+export interface AutonomousRunTask {
+  id: string;
+  run_id: string;
+  title: string | null;
+  target: string | null;
+  module: string;
+  risk_level: string;
+  status: string;
+  scan_id: string | null;
+  result: string | null;
+  created_at: string | null;
+}
+
+export interface AutonomousRunActivity {
+  id: string;
+  run_id: string;
+  message: string;
+  status: string;
+  created_at: string | null;
+}
+
+export interface AutonomousRun {
+  id: string;
+  agent_id: string;
+  agent_slug: string | null;
+  agent_name: string | null;
+  project_id: string;
+  engagement_id: string | null;
+  objective: string | null;
+  status: string;
+  plan: Record<string, unknown> | null;
+  celery_task_id: string | null;
+  started_at: string | null;
+  completed_at: string | null;
+  created_at: string | null;
+  tasks: AutonomousRunTask[];
+  activities: AutonomousRunActivity[];
+}

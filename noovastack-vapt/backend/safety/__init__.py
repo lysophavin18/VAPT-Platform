@@ -5,7 +5,9 @@ Validates all actions before execution.
 from dataclasses import dataclass, field
 from datetime import datetime, time
 from enum import Enum
+from ipaddress import ip_address, ip_network
 from typing import Any
+from urllib.parse import urlparse
 
 
 class RiskLevel(str, Enum):
@@ -34,6 +36,7 @@ class SafetyContext:
     testing_window_start: str | None = None
     testing_window_end: str | None = None
     is_approved: bool = False
+    scope_is_approved: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
 
 
@@ -49,15 +52,54 @@ BLOCKED_TOOLS = {
 
 HIGH_RISK_TOOLS = {"sqlmap", "ghauri", "ssrf_validator", "command_injection_validator"}
 
+RESTRICTED_NETWORKS = tuple(ip_network(value) for value in (
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16",
+    "127.0.0.0/8",
+    "169.254.0.0/16",
+    "0.0.0.0/32",
+    "fc00::/7",
+    "fe80::/10",
+    "::1/128",
+    "::/128",
+))
+
 
 def validate_scope(target: str, engagement_id: str | None, allow_internal: bool = False) -> ValidationResult:
     if not target:
         return ValidationResult(False, "No target specified")
-    blocked_prefixes = ("127.", "10.", "172.16.", "172.17.", "172.18.", "192.168.")
-    normalized = target.replace("http://", "").replace("https://", "")
-    if any(normalized.startswith(p) for p in blocked_prefixes) and not allow_internal:
-        return ValidationResult(False, f"Internal network target blocked: {target}")
+    network = _target_network(target)
+    if network and _is_restricted_network(network) and not allow_internal:
+        return ValidationResult(False, f"Internal or local network target blocked: {target}")
     return ValidationResult(True)
+
+
+def _target_network(target: str):
+    value = target.strip()
+    if not value:
+        return None
+
+    try:
+        return ip_network(value, strict=False)
+    except ValueError:
+        pass
+
+    parsed = urlparse(value if "://" in value else f"//{value}")
+    host = parsed.hostname
+    if not host:
+        return None
+    try:
+        return ip_network(ip_address(host), strict=False)
+    except ValueError:
+        return None
+
+
+def _is_restricted_network(network) -> bool:
+    for restricted in RESTRICTED_NETWORKS:
+        if network.version == restricted.version and network.overlaps(restricted):
+            return True
+    return network.network_address.is_private or network.broadcast_address.is_private
 
 
 def validate_testing_window(ctx: SafetyContext) -> ValidationResult:
@@ -102,7 +144,7 @@ def validate_action_safety(ctx: SafetyContext) -> ValidationResult:
 
 def run_safety_checks(ctx: SafetyContext) -> list[ValidationResult]:
     results = []
-    results.append(validate_scope(ctx.target, ctx.engagement_id, bool(ctx.metadata.get("authorized_internal"))))
+    results.append(validate_scope(ctx.target, ctx.engagement_id, ctx.scope_is_approved))
     results.append(validate_testing_window(ctx))
     results.append(validate_approval(ctx))
     results.append(validate_action_safety(ctx))

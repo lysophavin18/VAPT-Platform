@@ -20,6 +20,7 @@ app = Celery(
         "workers.tasks_discovery",
         "workers.tasks_reporting",
         "workers.tasks_scheduling",
+        "workers.tasks_ai",
     ],
 )
 
@@ -38,17 +39,25 @@ app.conf.update(
         "scan": {"exchange": "scan", "routing_key": "scan"},
         "reporting": {"exchange": "reporting", "routing_key": "reporting"},
         "scheduling": {"exchange": "scheduling", "routing_key": "scheduling"},
+        "ai": {"exchange": "ai", "routing_key": "ai"},
+        "monitoring": {"exchange": "monitoring", "routing_key": "monitoring"},
     },
     task_routes={
         "workers.tasks_discovery.*": {"queue": "asset_discovery"},
         "workers.tasks_scan.*": {"queue": "scan"},
         "workers.tasks_reporting.*": {"queue": "reporting"},
         "workers.tasks_scheduling.*": {"queue": "scheduling"},
+        "workers.tasks_ai.*": {"queue": "ai"},
+        "workers.tasks_monitoring.*": {"queue": "monitoring"},
     },
     beat_schedule={
         "check-scheduled-scans": {
             "task": "workers.tasks_scheduling.check_scheduled_scans",
             "schedule": 60.0,
+        },
+        "run-due-domain-monitors": {
+            "task": "workers.tasks_monitoring.run_due_domain_monitors",
+            "schedule": 3600.0,   # dispatcher runs every hour; per-monitor interval controls actual frequency
         },
     },
 )
@@ -56,3 +65,4 @@ app.conf.update(
 run_asset_discovery = app.signature("workers.tasks_discovery.run_asset_discovery")
 run_scan = app.signature("workers.tasks_scan.run_scan")
 generate_report_task = app.signature("workers.tasks_reporting.generate_report")
+run_domain_monitor_check = app.signature("workers.tasks_monitoring.run_domain_monitor_check")

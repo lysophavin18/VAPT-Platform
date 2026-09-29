@@ -21,6 +21,27 @@ import type { ScanValidationResult } from '@/types';
 
 const steps = ['Template', 'Configure', 'Review'];
 
+type NewScanForm = {
+  project_id: string;
+  engagement_id: string;
+  scan_category: string;
+  assessment_mode: string;
+  scan_depth: string;
+  auth_profile: string;
+  auth_type: string;
+  auth_username: string;
+  auth_secret_reference: string;
+  auth_login_url: string;
+  auth_header_name: string;
+  schedule_mode: string;
+  schedule_date: string;
+  schedule_time: string;
+  timezone: string;
+  recurrence_rule: string;
+  auto_report: boolean;
+  name: string;
+};
+
 const scanTemplates = [
   { id: 'vulnerability_scan', group: 'General', title: 'Vulnerability Scan', subtitle: 'Recommended', depth: 'standard', time: '2-3 hours', icon: ShieldAlert, tone: 'red', description: 'A balanced scan for common vulnerabilities across approved assets.', checks: ['Discovery', 'Safe vulnerability checks', 'Evidence', 'Report draft'] },
   { id: 'website', group: 'Application', title: 'Web Application', subtitle: 'OWASP focused', depth: 'standard', time: '2-3 hours', icon: Globe2, tone: 'blue', description: 'Checks web apps, portals, dashboards, headers, TLS, and common web risks.', checks: ['Crawling', 'Headers', 'TLS', 'OWASP checks'] },
@@ -42,6 +63,15 @@ const accessModes = [
   { id: 'gray_box', title: 'Authenticated Scan', badge: 'Deeper coverage', icon: UserCheck, description: 'Scan with an approved test account or API token to find issues behind login.', goodFor: 'Dashboards, user portals, admin areas, private APIs, and role-based access checks.' },
 ];
 
+const authTypes = [
+  { id: 'saved_profile', label: 'Saved profile' },
+  { id: 'basic', label: 'Username and password' },
+  { id: 'bearer_token', label: 'Bearer token' },
+  { id: 'api_key', label: 'API key header' },
+  { id: 'cookie', label: 'Session cookie' },
+  { id: 'login_form', label: 'Login form' },
+];
+
 export default function NewScanPage() {
   const router = useRouter();
   const search = useSearchParams();
@@ -54,13 +84,18 @@ export default function NewScanPage() {
   const [showModules, setShowModules] = useState(false);
   const [templateQuery, setTemplateQuery] = useState('');
   const [templateGroup, setTemplateGroup] = useState('All');
-  const [form, setForm] = useState({
+  const [form, setForm] = useState<NewScanForm>({
     project_id: search.get('project') ?? '',
     engagement_id: '',
     scan_category: search.get('category') ?? 'vulnerability_scan',
     assessment_mode: 'black_box',
     scan_depth: search.get('depth') ?? 'standard',
     auth_profile: 'None',
+    auth_type: 'saved_profile',
+    auth_username: '',
+    auth_secret_reference: '',
+    auth_login_url: '',
+    auth_header_name: 'Authorization',
     schedule_mode: 'run_now',
     schedule_date: new Date().toISOString().slice(0, 10),
     schedule_time: '23:00',
@@ -81,6 +116,7 @@ export default function NewScanPage() {
   const selectableAssets = useMemo(() => (assets.data ?? []).filter((asset) => asset.approval_status === 'approved' && asset.scope_status === 'in_scope'), [assets.data]);
   const scheduleLabel = form.schedule_mode === 'run_now' ? 'Run now' : `${form.schedule_date} ${form.schedule_time} ${form.timezone}`;
   const hasTargets = Boolean(form.project_id && selectedAssetIds.length);
+  const authenticationConfig = buildAuthenticationConfig(form);
 
   useEffect(() => {
     const template = scanTemplates.find((item) => item.id === form.scan_category) ?? scanTemplates[0];
@@ -104,7 +140,7 @@ export default function NewScanPage() {
       scan_category: form.scan_category,
       scan_depth: form.scan_depth,
       asset_ids: selectedAssetIds,
-      config: { authentication_profile: form.auth_profile, schedule: form.schedule_mode, safe_only: true },
+      config: { authentication: authenticationConfig, authentication_profile: form.auth_profile, schedule: form.schedule_mode, safe_only: true },
     });
   }
 
@@ -150,7 +186,7 @@ export default function NewScanPage() {
           testing_window: { start: form.schedule_time, end: '23:59', timezone: form.timezone },
           report_options: { auto_generate: form.auto_report, asset_ids: selectedAssetIds },
           asset_ids: selectedAssetIds,
-          config: { safe_only: true, authentication_profile: form.auth_profile },
+          config: { safe_only: true, authentication: authenticationConfig, authentication_profile: form.auth_profile },
         });
         toast.success('Scheduled scan created');
         router.push('/schedules');
@@ -220,7 +256,7 @@ export default function NewScanPage() {
                 <div className="grid gap-3 md:grid-cols-2">{accessModes.map((mode) => <AccessModeCard key={mode.id} mode={mode} active={form.assessment_mode === mode.id} onClick={() => { setForm({ ...form, assessment_mode: mode.id, auth_profile: mode.id === 'black_box' ? 'None' : form.auth_profile }); setValidation(null); }} />)}</div>
                 {form.assessment_mode === 'white_box' ? <div className="mt-3 rounded-2xl border border-blue-100 bg-blue-50 p-4 text-sm text-[#0B1F3A]"><p className="font-semibold">Full internal review selected</p><p className="mt-1 text-[#475569]">Use this when the assessment includes source code, architecture, configuration, or internal context. This may require review before launch.</p></div> : null}
               </div>
-              {form.assessment_mode !== 'black_box' ? <div className="rounded-2xl border border-[#E2E8F0] bg-slate-50 p-4"><div className="mb-3"><h3 className="font-semibold text-[#0F172A]">Test login profile</h3><p className="mt-1 text-sm text-[#64748B]">Select a saved credential reference. Secrets are never shown here.</p></div><AuthenticationProfileSelector value={form.auth_profile} onChange={(auth_profile) => { setForm({ ...form, auth_profile }); setValidation(null); }} /></div> : null}
+              {form.assessment_mode !== 'black_box' ? <AuthenticationSettings form={form} setForm={(next) => { setForm(next); setValidation(null); }} /> : null}
               {form.project_id ? <TargetSelection assets={assets.data ?? []} selectedIds={selectedAssetIds} onChange={(ids) => { setSelectedAssetIds(ids); setValidation(null); }} /> : <EmptyTargets />}
             </CardContent>
           </Card>
@@ -233,7 +269,7 @@ export default function NewScanPage() {
             <p className="mt-1 text-sm text-[#64748B]">Review scope and run a readiness check before starting.</p>
           </CardHeader>
           <CardContent className="space-y-6">
-            <ReviewGrid template={selectedTemplate} project={selectedProject?.name} targetCount={selectedAssetIds.length} depth={form.scan_depth} mode={form.assessment_mode} />
+            <ReviewGrid template={selectedTemplate} project={selectedProject?.name} targetCount={selectedAssetIds.length} depth={form.scan_depth} mode={form.assessment_mode} authType={form.assessment_mode === 'black_box' ? 'None' : labelForAuthType(form.auth_type)} />
             <div className="grid gap-4 md:grid-cols-2">
               <RunOption active={form.schedule_mode === 'run_now'} icon={Rocket} title="Launch now" text="Run immediately after readiness check passes." onClick={() => setForm({ ...form, schedule_mode: 'run_now' })} />
               <RunOption active={form.schedule_mode === 'schedule_later'} icon={CalendarClock} title="Schedule" text="Run during a chosen testing window." onClick={() => setForm({ ...form, schedule_mode: 'schedule_later' })} />
@@ -312,13 +348,53 @@ function AccessModeCard({ mode, active, onClick }: { mode: (typeof accessModes)[
   return <button type="button" onClick={onClick} className={`rounded-2xl border p-5 text-left transition hover:-translate-y-0.5 hover:shadow-md ${active ? 'border-[#155EEF] bg-blue-50 ring-2 ring-[#155EEF]/10' : 'border-[#E2E8F0] bg-white hover:border-[#155EEF]/50'}`}><div className="flex items-start justify-between gap-3"><span className={`rounded-2xl p-3 ${active ? 'bg-[#155EEF] text-white' : 'bg-slate-100 text-[#475569]'}`}><Icon className="h-5 w-5" /></span><span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#475569] shadow-sm">{mode.badge}</span></div><h4 className="mt-4 font-semibold text-[#0F172A]">{mode.title}</h4><p className="mt-2 text-sm leading-6 text-[#64748B]">{mode.description}</p><p className="mt-3 rounded-xl bg-white/70 p-3 text-xs leading-5 text-[#475569]"><strong>Good for:</strong> {mode.goodFor}</p></button>;
 }
 
+function AuthenticationSettings({ form, setForm }: { form: NewScanForm; setForm: (form: NewScanForm) => void }) {
+  const update = (patch: Partial<NewScanForm>) => setForm({ ...form, ...patch });
+  return (
+    <div className="rounded-2xl border border-[#E2E8F0] bg-slate-50 p-4">
+      <div className="mb-3">
+        <h3 className="font-semibold text-[#0F172A]">Authentication</h3>
+        <p className="mt-1 text-sm text-[#64748B]">Choose how the scan should authenticate. Store secret values in your approved vault and enter only the reference here.</p>
+      </div>
+      <div className="grid gap-4 md:grid-cols-2">
+        <Field label="Authentication type"><Select value={form.auth_type} onChange={(event) => update({ auth_type: event.target.value })}>{authTypes.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}</Select></Field>
+        <Field label="Saved credential profile"><AuthenticationProfileSelector value={form.auth_profile} onChange={(auth_profile) => update({ auth_profile })} /></Field>
+        {['basic', 'login_form'].includes(form.auth_type) ? <Field label="Username"><Input value={form.auth_username} onChange={(event) => update({ auth_username: event.target.value })} placeholder="approved-test-user" /></Field> : null}
+        {['bearer_token', 'api_key'].includes(form.auth_type) ? <Field label="Header name"><Input value={form.auth_header_name} onChange={(event) => update({ auth_header_name: event.target.value })} placeholder={form.auth_type === 'api_key' ? 'X-API-Key' : 'Authorization'} /></Field> : null}
+        {form.auth_type === 'login_form' ? <Field label="Login URL"><Input value={form.auth_login_url} onChange={(event) => update({ auth_login_url: event.target.value })} placeholder="https://app.example.com/login" /></Field> : null}
+        <Field label="Secret reference"><Input type="password" value={form.auth_secret_reference} onChange={(event) => update({ auth_secret_reference: event.target.value })} placeholder="vault://noovastack/project/test-account" /></Field>
+      </div>
+      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+        Do not paste real passwords, tokens, cookies, or customer secrets unless a secure credential vault integration is enabled. This field is intended for a reference ID.
+      </div>
+    </div>
+  );
+}
+
 function EmptyTargets() {
   return <div className="rounded-2xl border border-dashed border-[#CBD5E1] bg-slate-50 p-8 text-center"><Radar className="mx-auto h-8 w-8 text-[#64748B]" /><h3 className="mt-3 font-semibold text-[#0F172A]">Select a project to load targets</h3><p className="mt-2 text-sm text-[#64748B]">Only approved in-scope assets can be selected for scanning.</p></div>;
 }
 
-function ReviewGrid({ template, project, targetCount, depth, mode }: { template: (typeof scanTemplates)[number]; project?: string; targetCount: number; depth: string; mode: string }) {
-  const rows = [{ label: 'Template', value: template.title }, { label: 'Project', value: project ?? 'Not selected' }, { label: 'Targets', value: `${targetCount} selected` }, { label: 'Intensity', value: titleCase(depth) }, { label: 'Access', value: mode === 'black_box' ? 'Unauthenticated Scan' : mode === 'gray_box' ? 'Authenticated Scan' : 'Full Internal Review' }];
-  return <div className="grid gap-3 md:grid-cols-5">{rows.map((row) => <div key={row.label} className="rounded-2xl border border-[#E2E8F0] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-wide text-[#64748B]">{row.label}</p><p className="mt-2 font-semibold text-[#0F172A]">{row.value}</p></div>)}</div>;
+function ReviewGrid({ template, project, targetCount, depth, mode, authType }: { template: (typeof scanTemplates)[number]; project?: string; targetCount: number; depth: string; mode: string; authType: string }) {
+  const rows = [{ label: 'Template', value: template.title }, { label: 'Project', value: project ?? 'Not selected' }, { label: 'Targets', value: `${targetCount} selected` }, { label: 'Intensity', value: titleCase(depth) }, { label: 'Access', value: mode === 'black_box' ? 'Unauthenticated Scan' : mode === 'gray_box' ? 'Authenticated Scan' : 'Full Internal Review' }, { label: 'Auth Type', value: authType }];
+  return <div className="grid gap-3 md:grid-cols-6">{rows.map((row) => <div key={row.label} className="rounded-2xl border border-[#E2E8F0] bg-white p-4"><p className="text-xs font-semibold uppercase tracking-wide text-[#64748B]">{row.label}</p><p className="mt-2 font-semibold text-[#0F172A]">{row.value}</p></div>)}</div>;
+}
+
+function labelForAuthType(type: string) {
+  return authTypes.find((item) => item.id === type)?.label ?? titleCase(type);
+}
+
+function buildAuthenticationConfig(form: NewScanForm) {
+  if (form.assessment_mode === 'black_box') return { enabled: false, type: 'none', profile: 'None' };
+  return {
+    enabled: true,
+    type: form.auth_type,
+    profile: form.auth_profile,
+    username: form.auth_username || undefined,
+    secret_reference: form.auth_secret_reference || undefined,
+    login_url: form.auth_login_url || undefined,
+    header_name: form.auth_header_name || undefined,
+  };
 }
 
 function RunOption({ active, icon: Icon, title, text, onClick }: { active: boolean; icon: LucideIcon; title: string; text: string; onClick: () => void }) {

@@ -59,6 +59,10 @@ function notificationTitle(item: NotificationItem) {
   if (item.event_type === 'finding' && item.action === 'status_updated') return 'Finding retest status updated';
   if (item.event_type === 'asset_discovery') return 'Asset discovery started';
   if (item.event_type === 'engagement') return `Engagement ${titleCase(item.action)}`;
+  if (item.event_type === 'approval' && item.action === 'approval_approved') return 'Security Team approved your scan';
+  if (item.event_type === 'approval' && item.action === 'approval_rejected') return 'Security Team rejected your scan';
+  if (item.event_type === 'approval') return `Approval ${titleCase(item.action.replace('approval_', ''))}`;
+  if (item.event_type === 'scan' && item.action === 'scan_completed') return 'Scan completed — report ready';
   if (item.event_type === 'scan') return `Scan ${titleCase(item.action)}`;
   return `${titleCase(item.event_type)} ${titleCase(item.action)}`;
 }

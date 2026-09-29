@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 
 from database import get_db
 from database.models import Approval, AuditLog, Engagement, Evidence, Project, Asset, Scan, ScanAsset, ScanSchedule, Finding
-from auth import require_user, User
+from auth import get_project_or_404, has_global_project_access, project_access_clause, require_user, User
 from api.schemas import DashboardStats
 
 router = APIRouter()
@@ -142,6 +142,8 @@ def _project_filter(user: User, project_id: str | None):
 
 
 async def _load_dashboard_context(db: AsyncSession, current_user: User, filters: dict):
+    if filters.get("project_id") and filters["project_id"] != "all":
+        await get_project_or_404(db, filters["project_id"], current_user)
     project_clauses = _project_filter(current_user, filters.get("project_id"))
     if filters.get("environment") and filters["environment"] != "all":
         project_clauses.append(Project.environment == filters["environment"])
@@ -180,7 +182,19 @@ async def _load_dashboard_context(db: AsyncSession, current_user: User, filters:
     approval_result = await db.execute(approval_query)
     approvals = approval_result.scalars().all()
 
-    audit_query = select(AuditLog).where(AuditLog.project_id.in_(project_ids)) if project_ids else select(AuditLog).where(False)
+    audit_query = (
+        select(AuditLog).where(
+            or_(
+                AuditLog.project_id.in_(project_ids),
+                AuditLog.scan_id.in_(scan_ids),
+                AuditLog.engagement_id.in_(
+                    select(Engagement.id).where(Engagement.project_id.in_(project_ids))
+                ),
+            )
+        )
+        if project_ids
+        else select(AuditLog).where(False)
+    )
     audit_result = await db.execute(audit_query.order_by(AuditLog.created_at.desc()).limit(200))
     audit_logs = audit_result.scalars().all()
 
@@ -198,11 +212,7 @@ async def get_dashboard_stats(
 ):
     stats = DashboardStats()
 
-    owner_filter = (
-        Project.owner_id == current_user.id
-        if current_user.role not in ("admin", "manager")
-        else True
-    )
+    owner_filter = project_access_clause(current_user)
 
     stats.total_projects = (
         await db.execute(select(func.count(Project.id)).where(owner_filter))
@@ -210,35 +220,37 @@ async def get_dashboard_stats(
 
     stats.active_engagements = (
         await db.execute(
-            select(func.count(Engagement.id)).where(Engagement.status == "active")
+            select(func.count(Engagement.id)).join(Project, Project.id == Engagement.project_id).where(Engagement.status == "active", owner_filter)
         )
     ).scalar() or 0
 
     stats.total_assets = (
-        await db.execute(select(func.count(Asset.id)))
+        await db.execute(select(func.count(Asset.id)).join(Project, Project.id == Asset.project_id).where(owner_filter))
     ).scalar() or 0
 
     stats.running_scans = (
         await db.execute(
-            select(func.count(Scan.id)).where(Scan.status.in_(["running", "pending"]))
+            select(func.count(Scan.id)).join(Project, Project.id == Scan.project_id).where(Scan.status.in_(["running", "pending"]), owner_filter)
         )
     ).scalar() or 0
 
     stats.scheduled_scans = (
         await db.execute(
-            select(func.count(ScanSchedule.id)).where(ScanSchedule.status == "active")
+            select(func.count(ScanSchedule.id)).join(Project, Project.id == ScanSchedule.project_id).where(ScanSchedule.status == "active", owner_filter)
         )
     ).scalar() or 0
 
     stats.open_findings = (
         await db.execute(
-            select(func.count(Finding.id)).where(Finding.status == "open")
+            select(func.count(Finding.id)).join(Scan, Scan.id == Finding.scan_id).join(Project, Project.id == Scan.project_id).where(Finding.status == "open", owner_filter)
         )
     ).scalar() or 0
 
     severity_counts = await db.execute(
         select(Finding.severity, func.count(Finding.id))
-        .where(Finding.status == "open")
+        .join(Scan, Scan.id == Finding.scan_id)
+        .join(Project, Project.id == Scan.project_id)
+        .where(Finding.status == "open", owner_filter)
         .group_by(Finding.severity)
     )
     stats.findings_by_severity = dict(severity_counts.all())
@@ -255,11 +267,19 @@ async def get_recent_activity(
     current_user: User = Depends(require_user),
 ):
     from database.models import AuditLog
-    result = await db.execute(
-        select(AuditLog)
-        .order_by(AuditLog.created_at.desc())
-        .limit(20)
-    )
+    query = select(AuditLog)
+    if not has_global_project_access(current_user):
+        owned_projects = select(Project.id).where(Project.owner_id == current_user.id)
+        owned_scans = select(Scan.id).join(Project, Project.id == Scan.project_id).where(Project.owner_id == current_user.id)
+        owned_engagements = select(Engagement.id).join(Project, Project.id == Engagement.project_id).where(Project.owner_id == current_user.id)
+        query = query.where(
+            or_(
+                AuditLog.project_id.in_(owned_projects),
+                AuditLog.scan_id.in_(owned_scans),
+                AuditLog.engagement_id.in_(owned_engagements),
+            )
+        )
+    result = await db.execute(query.order_by(AuditLog.created_at.desc()).limit(20))
     logs = result.scalars().all()
     return [
         {

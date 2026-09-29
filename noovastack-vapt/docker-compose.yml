@@ -45,18 +45,20 @@ services:
     environment:
       - DATABASE_URL=postgresql+asyncpg://noovastack:noovastack_secure_2024!@postgres:5432/noovastack_vapt
       - REDIS_URL=redis://:noovastack_redis_2024!@redis:6379/0
-      - SECRET_KEY=${SECRET_KEY:-change-this-to-a-secure-random-string-in-production-min-32-chars!!}
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY to a secure random value of at least 32 characters}
+      - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
+      - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
       - JWT_ALGORITHM=HS256
       - JWT_EXPIRATION=3600
       - CELERY_BROKER_URL=redis://:noovastack_redis_2024!@redis:6379/1
       - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@redis:6379/2
-      - AI_PROVIDER=ollama
-      - AI_BASE_URL=http://192.168.220.204:11434/v1
-      - AI_API_KEY=ollama
-      - AI_MODEL=qwen3-coder:30b-64k
-      - AI_TIMEOUT_SECONDS=240
-      - AI_MAX_OUTPUT_TOKENS=4096
-      - AI_TEMPERATURE=0.2
+      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
+      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-deepseek-v4-flash}
+      - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-240}
+      - AI_MAX_OUTPUT_TOKENS=${AI_MAX_OUTPUT_TOKENS:-4096}
+      - AI_TEMPERATURE=${AI_TEMPERATURE:-0.2}
     volumes:
       - ./backend:/app
       - scan_results:/app/results
@@ -76,13 +78,22 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: noovastack-celery-worker
-    command: celery -A workers.celery_app worker --loglevel=info --pool=solo --concurrency=1 -Q asset_discovery,scan,reporting,scheduling
+    command: celery -A workers.celery_app worker --loglevel=info --pool=solo --concurrency=1 -Q asset_discovery,scan,reporting,scheduling,ai,monitoring
     environment:
       - DATABASE_URL=postgresql+asyncpg://noovastack:noovastack_secure_2024!@127.0.0.1:5434/noovastack_vapt
       - REDIS_URL=redis://:noovastack_redis_2024!@127.0.0.1:6381/0
       - PYTHONPATH=/app
       - CELERY_BROKER_URL=redis://:noovastack_redis_2024!@127.0.0.1:6381/1
       - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@127.0.0.1:6381/2
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY to a secure random value of at least 32 characters}
+      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
+      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com}
+      - AI_API_KEY=${AI_API_KEY:-}
+      - AI_MODEL=${AI_MODEL:-deepseek-v4-flash}
+      - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-240}
+      - AI_MAX_OUTPUT_TOKENS=${AI_MAX_OUTPUT_TOKENS:-4096}
+      - AI_TEMPERATURE=${AI_TEMPERATURE:-0.2}
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY to a secure random value of at least 32 characters}
     volumes:
       - ./backend:/app
       - scan_results:/app/results
@@ -107,6 +118,7 @@ services:
       - PYTHONPATH=/app
       - CELERY_BROKER_URL=redis://:noovastack_redis_2024!@redis:6379/1
       - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@redis:6379/2
+      - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY to a secure random value of at least 32 characters}
     volumes:
       - ./backend:/app
     depends_on:
