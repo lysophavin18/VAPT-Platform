@@ -1,17 +1,18 @@
 'use client';
 
-import { FormEvent, KeyboardEvent, useEffect, useMemo, useRef, useState } from 'react';
-import Link from 'next/link';
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
-import { AlertTriangle, Archive, Bot, CheckCircle2, ChevronLeft, ChevronRight, Clock, Copy, FileText, History, Info, Loader2, Menu, MessageSquarePlus, MoreHorizontal, Paperclip, PauseCircle, Pin, RefreshCw, Search, Send, ShieldCheck, Sparkles, Trash2, Wrench, XCircle } from 'lucide-react';
+import {
+  AlertTriangle, Archive, Bot, CheckCircle2, ChevronRight, Clock,
+  Copy, FileText, Info, Loader2, Menu, MessageSquarePlus, MoreHorizontal,
+  Pin, RefreshCw, Search, Send, ShieldCheck, Sparkles, Square,
+  Trash2, XCircle, Zap,
+} from 'lucide-react';
 import { api, ApiError } from '@/lib/api-client';
-import { AgentToolRequestPanel } from '@/components/ai-agents/agent-tool-request-panel';
 import { useAuth } from '@/hooks/use-auth';
 import { useProjects } from '@/hooks/use-projects';
 import { useEngagements } from '@/hooks/use-engagements';
-import { useFinding, useFindings } from '@/hooks/use-findings';
-import { useAssets } from '@/hooks/use-assets';
-import { MarkdownItem, MarkdownLite } from '@/lib/markdown-lite';
+import { MarkdownLite } from '@/lib/markdown-lite';
 import type { User } from '@/types';
 
 const PRIMARY_MODEL = 'deepseek-v4-flash';
@@ -19,62 +20,87 @@ const HISTORY_KEY_PREFIX = 'noovastack.security.chatHistory';
 const MAX_INPUT = 12000;
 
 const modes = [
-  { id: 'general', label: 'Ask Assistant', tip: 'Ask platform and security workflow questions.', prompt: 'Explain what evidence I need before validating this issue.' },
-  { id: 'assessment_planner', label: 'Plan Assessment', tip: 'Create a safe VAPT plan from approved scope.', prompt: 'Help me create a safe assessment plan.' },
-  { id: 'finding_review', label: 'Review Finding', tip: 'Review evidence and explain what is missing.', prompt: 'Review this finding and tell me what is missing.' },
-  { id: 'remediation', label: 'Suggest Fix', tip: 'Draft mitigation, long-term fix, and verification steps.', prompt: 'Suggest remediation for this vulnerability.' },
-  { id: 'report_writer', label: 'Write Report', tip: 'Improve report language for technical and executive readers.', prompt: 'Write a technical summary for my report.' },
-  { id: 'retest_review', label: 'Review Retest', tip: 'Compare original and retest evidence.', prompt: 'Compare the original and retest evidence.' },
+  { id: 'general',           label: 'Ask Assistant',  emoji: '💬', color: 'from-violet-500 to-indigo-500',  tip: 'Ask platform and security workflow questions.',        prompt: 'Explain what evidence I need before validating this issue.' },
+  { id: 'assessment_planner',label: 'Plan Assessment', emoji: '🗺️', color: 'from-blue-500 to-cyan-500',      tip: 'Create a safe VAPT plan from approved scope.',        prompt: 'Help me create a safe assessment plan.' },
+  { id: 'finding_review',    label: 'Review Finding', emoji: '🔍', color: 'from-amber-500 to-orange-500',   tip: 'Review evidence and explain what is missing.',         prompt: 'Review this finding and tell me what is missing.' },
+  { id: 'remediation',       label: 'Suggest Fix',    emoji: '🔧', color: 'from-emerald-500 to-teal-500',   tip: 'Draft mitigation, long-term fix, and verification.',  prompt: 'Suggest remediation for this vulnerability.' },
+  { id: 'report_writer',     label: 'Write Report',   emoji: '📝', color: 'from-pink-500 to-rose-500',      tip: 'Improve report language for all audiences.',          prompt: 'Write a technical summary for my report.' },
+  { id: 'retest_review',     label: 'Review Retest',  emoji: '✅', color: 'from-slate-500 to-gray-500',     tip: 'Compare original and retest evidence.',               prompt: 'Compare the original and retest evidence.' },
 ];
 
 const MODE_SUGGESTIONS: Record<string, { label: string; prompt: string; icon: typeof Bot }[]> = {
-  general: [
-    { label: 'Plan assessment', prompt: 'Help me create a safe assessment plan.', icon: ShieldCheck },
-    { label: 'Required evidence', prompt: 'Explain what evidence I need before validating this issue.', icon: FileText },
-    { label: 'Scope rules', prompt: 'What activities are blocked by default?', icon: Info },
-  ],
-  assessment_planner: [
-    { label: 'Plan scope', prompt: 'Help me create a safe assessment plan.', icon: ShieldCheck },
-    { label: 'Engagement checklist', prompt: 'What do I need before authorizing an engagement?', icon: CheckCircle2 },
-    { label: 'Blocked activities', prompt: 'What testing activities are blocked?', icon: AlertTriangle },
-  ],
-  finding_review: [
-    { label: 'Missing evidence', prompt: 'Review this finding and tell me what is missing.', icon: FileText },
-    { label: 'Severity check', prompt: 'Is the suggested severity justified?', icon: Info },
-    { label: 'Reject finding', prompt: 'Reject this finding and explain why.', icon: XCircle },
-  ],
-  remediation: [
-    { label: 'Immediate fix', prompt: 'What is the immediate mitigation?', icon: ShieldCheck },
-    { label: 'Verification', prompt: 'How do I verify the remediation?', icon: CheckCircle2 },
-    { label: 'References', prompt: 'Provide remediation references.', icon: FileText },
-  ],
-  report_writer: [
-    { label: 'Executive summary', prompt: 'Write an executive summary.', icon: FileText },
-    { label: 'Technical detail', prompt: 'Write technical findings detail.', icon: Info },
-    { label: 'Improve language', prompt: 'Improve the report language.', icon: Sparkles },
-  ],
-  retest_review: [
-    { label: 'Compare evidence', prompt: 'Compare original and retest evidence.', icon: FileText },
-    { label: 'Retest status', prompt: 'Is the finding fixed?', icon: CheckCircle2 },
-    { label: 'Still vulnerable', prompt: 'Explain why it is still vulnerable.', icon: AlertTriangle },
-  ],
+  general:            [{ label: 'Plan assessment', prompt: 'Help me create a safe assessment plan.', icon: ShieldCheck }, { label: 'Required evidence', prompt: 'Explain what evidence I need before validating this issue.', icon: FileText }, { label: 'Scope rules', prompt: 'What activities are blocked by default?', icon: Info }],
+  assessment_planner: [{ label: 'Plan scope', prompt: 'Help me create a safe assessment plan.', icon: ShieldCheck }, { label: 'Engagement checklist', prompt: 'What do I need before authorizing an engagement?', icon: CheckCircle2 }, { label: 'Blocked activities', prompt: 'What testing activities are blocked?', icon: AlertTriangle }],
+  finding_review:     [{ label: 'Missing evidence', prompt: 'Review this finding and tell me what is missing.', icon: FileText }, { label: 'Severity check', prompt: 'Is the suggested severity justified?', icon: Info }, { label: 'Reject finding', prompt: 'Reject this finding and explain why.', icon: XCircle }],
+  remediation:        [{ label: 'Immediate fix', prompt: 'What is the immediate mitigation?', icon: ShieldCheck }, { label: 'Verification', prompt: 'How do I verify the remediation?', icon: CheckCircle2 }, { label: 'References', prompt: 'Provide remediation references.', icon: FileText }],
+  report_writer:      [{ label: 'Executive summary', prompt: 'Write an executive summary.', icon: FileText }, { label: 'Technical detail', prompt: 'Write technical findings detail.', icon: Info }, { label: 'Improve language', prompt: 'Improve the report language.', icon: Sparkles }],
+  retest_review:      [{ label: 'Compare evidence', prompt: 'Compare original and retest evidence.', icon: FileText }, { label: 'Retest status', prompt: 'Is the finding fixed?', icon: CheckCircle2 }, { label: 'Still vulnerable', prompt: 'Explain why it is still vulnerable.', icon: AlertTriangle }],
 };
 
 const evidenceSchema = z.object({ id: z.string().optional(), type: z.string().optional(), source: z.string().optional(), captured: z.string().optional(), redaction_status: z.string().optional(), integrity_status: z.string().optional() }).passthrough();
 const toolCallSchema = z.object({ name: z.string().optional(), parameters: z.record(z.unknown()).optional(), status: z.string().optional(), duration: z.string().optional(), output_reference: z.string().optional() }).passthrough();
 const assistantContentSchema = z.object({
-  type: z.string().optional(), message: z.string().optional(), summary: z.string().optional(), status: z.string().optional(), recommendation: z.string().optional(), suggested_severity: z.string().optional(), severity: z.string().optional(), owasp_category: z.string().optional(), cwe: z.string().optional(), evidence_ids: z.array(z.string()).optional(), evidence: z.array(evidenceSchema).optional(), missing_information: z.array(z.string()).optional(), remediation: z.object({ issue_summary: z.string().optional(), immediate_mitigation: z.array(z.string()).optional(), long_term_remediation: z.array(z.string()).optional(), verification_steps: z.array(z.string()).optional(), references: z.array(z.string()).optional() }).partial().optional(), report: z.object({ current_content: z.string().optional(), ai_suggestion: z.string().optional() }).partial().optional(), warnings: z.array(z.string()).optional(), tool_calls: z.array(toolCallSchema).optional(), human_review_required: z.boolean().optional(), access_level: z.string().optional(),
+  type: z.string().optional(), message: z.string().optional(), summary: z.string().optional(), status: z.string().optional(), recommendation: z.string().optional(), suggested_severity: z.string().optional(), severity: z.string().optional(), owasp_category: z.string().optional(), cwe: z.string().optional(), evidence_ids: z.array(z.string()).optional(), evidence: z.array(evidenceSchema).optional(), missing_information: z.array(z.string()).optional(),
+  remediation: z.object({ issue_summary: z.string().optional(), immediate_mitigation: z.array(z.string()).optional(), long_term_remediation: z.array(z.string()).optional(), verification_steps: z.array(z.string()).optional(), references: z.array(z.string()).optional() }).partial().optional(),
+  report: z.object({ current_content: z.string().optional(), ai_suggestion: z.string().optional() }).partial().optional(),
+  warnings: z.array(z.string()).optional(), tool_calls: z.array(toolCallSchema).optional(), human_review_required: z.boolean().optional(), access_level: z.string().optional(),
 }).passthrough();
 
 type AssistantContent = z.infer<typeof assistantContentSchema>;
-type EvidenceItem = z.infer<typeof evidenceSchema>;
 type ChatMessage = { id: string; role: 'user' | 'assistant' | 'error'; content: string | AssistantContent; mode?: string; model?: string; createdAt: string; raw?: unknown; parserWarning?: string };
 type ChatSession = { id: string; title: string; mode: string; messages: ChatMessage[]; updatedAt: string; pinned?: boolean; archived?: boolean; contextProjectId?: string; contextEngagementId?: string; contextFindingId?: string };
 type ContextPatch = Partial<Pick<ChatSession, 'contextProjectId' | 'contextEngagementId' | 'contextFindingId'>>;
 type Health = { provider: string; model: string; context_window: string; deployment: string; available: boolean; status: string };
 
-const welcomeMessage: ChatMessage = { id: 'welcome', role: 'assistant', mode: 'general', model: PRIMARY_MODEL, createdAt: new Date().toISOString(), content: { type: 'plain', message: "Hi, I'm your AI pentesting copilot. Tell me about a target, a finding, or a fix you're working on — I'll help plan safely, triage evidence, and turn vulnerabilities into concrete remediation steps, the way a teammate on the assessment would. I explain and recommend; a human always makes the final call on scope, findings, and reports.", human_review_required: true } };
+const welcomeMessage: ChatMessage = {
+  id: 'welcome', role: 'assistant', mode: 'general', model: PRIMARY_MODEL, createdAt: new Date().toISOString(),
+  content: { type: 'plain', message: "Hi! 👋 I'm your AI security copilot. Tell me about a target, a finding, or a fix you're working on — I'll help you plan safely, triage evidence, and turn vulnerabilities into actionable steps.\n\nI explain and recommend; a human always makes the final call on scope, findings, and reports.", human_review_required: false },
+};
 
+// ── helpers ───────────────────────────────────────────────────────────────────
+function getUserHistoryKey(user: User | null | undefined) { return user ? `${HISTORY_KEY_PREFIX}.${user.id}` : `${HISTORY_KEY_PREFIX}.guest`; }
+function createChatSession(): ChatSession { return { id: `sess-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title: 'New chat', mode: 'general', messages: [welcomeMessage], updatedAt: new Date().toISOString() }; }
+function makeTitle(text: string) { return text.slice(0, 42).replace(/\s+/g, ' ').trim() + (text.length > 42 ? '…' : ''); }
+function formatTime(iso: string) { try { const d = new Date(iso); const now = new Date(); const diff = (now.getTime() - d.getTime()) / 1000; if (diff < 60) return 'just now'; if (diff < 3600) return `${Math.floor(diff / 60)}m ago`; if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`; return d.toLocaleDateString(); } catch { return ''; } }
+function groupSessions(sessions: ChatSession[]) { const groups: Record<string, ChatSession[]> = {}; const now = new Date(); sessions.filter(s => s.pinned).forEach(s => { (groups['📌 Pinned'] ??= []).push(s); }); sessions.filter(s => !s.pinned).forEach(s => { const d = new Date(s.updatedAt); const diff = (now.getTime() - d.getTime()) / 86400000; const key = diff < 1 ? 'Today' : diff < 2 ? 'Yesterday' : diff < 7 ? 'This week' : 'Earlier'; (groups[key] ??= []).push(s); }); return groups; }
+function sortSessions(sessions: ChatSession[]) { return [...sessions].sort((a, b) => { if (a.pinned && !b.pinned) return -1; if (!a.pinned && b.pinned) return 1; return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(); }); }
+function normalizeMessage(msg: ChatMessage): ChatMessage {
+  if (msg.role === 'user' && typeof msg.content !== 'string') {
+    const c = msg.content as Record<string, unknown>;
+    const text = (c?.message ?? c?.text ?? c?.content ?? '') as string;
+    return { ...msg, content: String(text) };
+  }
+  return msg;
+}
+function loadChatHistory(key: string): ChatSession[] { try { const raw = localStorage.getItem(key); if (!raw) return []; const parsed = JSON.parse(raw); return Array.isArray(parsed) ? parsed.filter(s => s.id && s.messages).map(s => ({ ...s, messages: s.messages.map(normalizeMessage) })) : []; } catch { return []; } }
+function saveChatHistory(key: string, sessions: ChatSession[]) { try { localStorage.setItem(key, JSON.stringify(sessions.slice(0, 50))); } catch { /* quota */ } }
+function labelForMode(id: string) { return modes.find(m => m.id === id)?.label ?? id; }
+function emojiForMode(id: string) { return modes.find(m => m.id === id)?.emoji ?? '💬'; }
+
+function parseAssistantResponse(text: string): { content: AssistantContent; warning?: string } {
+  if (!text || text === '__STREAMING__') return { content: { type: 'streaming' } as AssistantContent };
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/, '').trim();
+  try { const parsed = assistantContentSchema.parse(JSON.parse(cleaned)); return { content: parsed }; }
+  catch { /* not JSON */ }
+  return { content: { type: 'plain', message: text } as AssistantContent };
+}
+
+function getChatErrorText(error: unknown): string {
+  if (error instanceof ApiError) return error.message;
+  if (error instanceof Error) return error.message;
+  return 'An unexpected error occurred.';
+}
+function getChatErrorKind(error: unknown): string {
+  if (error instanceof ApiError && error.status === 401) return 'Unauthorized';
+  if (error instanceof ApiError && error.status === 503) return 'Unavailable';
+  return 'Error';
+}
+function buildAuthErrorMessage(): ChatMessage {
+  return { id: `err-${Date.now()}`, role: 'error', content: 'Session expired. Please refresh and log in again.', createdAt: new Date().toISOString() };
+}
+function useDeviceClass() { const [cls, setCls] = useState<'mobile' | 'tablet' | 'desktop'>('desktop'); useEffect(() => { const update = () => setCls(window.innerWidth < 640 ? 'mobile' : window.innerWidth < 1024 ? 'tablet' : 'desktop'); update(); window.addEventListener('resize', update); return () => window.removeEventListener('resize', update); }, []); return cls; }
+
+// ── Page ──────────────────────────────────────────────────────────────────────
 export default function SecurityAssistantPage() {
   const { token, user, loading: authLoading } = useAuth();
   const historyKey = useMemo(() => getUserHistoryKey(user), [user]);
@@ -88,40 +114,28 @@ export default function SecurityAssistantPage() {
   const [health, setHealth] = useState<Health | null>(null);
   const [search, setSearch] = useState('');
   const [showHistory, setShowHistory] = useState(false);
-  const [showContext, setShowContext] = useState(false);
-  const [toolRequestOpen, setToolRequestOpen] = useState(false);
-  const device = useDeviceClass();
   const abortRef = useRef<AbortController | null>(null);
   const streamingMessageIdRef = useRef<string | null>(null);
   const streamingTextRef = useRef('');
   const lastUserPromptRef = useRef('');
 
-  const activeSession = sessions.find((session) => session.id === activeId) ?? sessions[0];
-  const activeMode = modes.find((item) => item.id === mode) ?? modes[0];
+  const activeSession = sessions.find(s => s.id === activeId) ?? sessions[0];
+  const activeMode = modes.find(m => m.id === mode) ?? modes[0];
   const authorizationAvailable = Boolean(token) && !authLoading;
 
-  useEffect(() => {
-    const saved = loadChatHistory(historyKey);
-    const next = saved.length ? saved : [createChatSession()];
-    setSessions(next);
-    setActiveId(next[0].id);
-  }, [historyKey]);
+  useEffect(() => { const saved = loadChatHistory(historyKey); const next = saved.length ? saved : [createChatSession()]; setSessions(next); setActiveId(next[0].id); }, [historyKey]);
   useEffect(() => { saveChatHistory(historyKey, sessions); }, [historyKey, sessions]);
   useEffect(() => { if (activeSession) setMode(activeSession.mode); }, [activeSession?.id]);
-  useEffect(() => { if (!token) return; api.localAiHealth(token).then(setHealth).catch(() => setHealth({ provider: 'deepseek', model: PRIMARY_MODEL, context_window: '64K', deployment: 'Local', available: false, status: 'unavailable' })); }, [token]);
-
+  useEffect(() => { if (!token) return; api.localAiHealth(token).then(setHealth).catch(() => setHealth({ provider: 'opencode', model: PRIMARY_MODEL, context_window: '64K', deployment: 'Cloud', available: false, status: 'unavailable' })); }, [token]);
 
   async function sendMessage(event?: FormEvent, forcedText?: string) {
     event?.preventDefault();
     const text = (forcedText ?? prompt).trim();
-    if (!token) {
-      updateActiveSession((session) => ({ ...session, messages: [...session.messages, buildAuthErrorMessage()], updatedAt: new Date().toISOString() }));
-      return;
-    }
+    if (!token) { updateActiveSession(s => ({ ...s, messages: [...s.messages, buildAuthErrorMessage()], updatedAt: new Date().toISOString() })); return; }
     if (!text || loading || !authorizationAvailable) return;
     lastUserPromptRef.current = text;
     const userMessage: ChatMessage = { id: `msg-${Date.now()}`, role: 'user', content: text, mode, createdAt: new Date().toISOString() };
-    updateActiveSession((session) => ({ ...session, title: session.title === 'New assessment chat' ? makeTitle(text) : session.title, messages: [...session.messages, userMessage], updatedAt: new Date().toISOString() }));
+    updateActiveSession(s => ({ ...s, title: s.title === 'New chat' ? makeTitle(text) : s.title, messages: [...s.messages, userMessage], updatedAt: new Date().toISOString() }));
     if (!forcedText) setPrompt('');
     setLoading(true);
     abortRef.current = new AbortController();
@@ -129,830 +143,493 @@ export default function SecurityAssistantPage() {
     streamingMessageIdRef.current = assistantId;
     streamingTextRef.current = '';
     const assistantMessage: ChatMessage = { id: assistantId, role: 'assistant', content: '__STREAMING__', mode, model: PRIMARY_MODEL, createdAt: new Date().toISOString() };
-    updateActiveSession((session) => ({ ...session, messages: [...session.messages, assistantMessage], updatedAt: new Date().toISOString() }));
+    updateActiveSession(s => ({ ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date().toISOString() }));
     try {
       await api.localAiChatStream({ prompt: text, mode, model: PRIMARY_MODEL, conversation_id: activeSession.id, project_id: activeSession.contextProjectId, engagement_id: activeSession.contextEngagementId, finding_id: activeSession.contextFindingId }, token, abortRef.current.signal, (chunk) => {
-        if (chunk.type === 'token' && chunk.token) {
-          streamingTextRef.current += chunk.token;
-        } else if (chunk.type === 'error') {
-          throw new ApiError(502, chunk.error || 'The local AI stream failed.');
-        }
+        if (chunk.type === 'token' && chunk.token) { streamingTextRef.current += chunk.token; }
+        else if (chunk.type === 'error') { throw new ApiError(502, chunk.error || 'Stream failed.'); }
       });
       const parsed = parseAssistantResponse(streamingTextRef.current);
-      updateActiveSession((session) => {
-        const messages = session.messages.map((message) => message.id === assistantId ? { ...message, content: parsed.content, raw: streamingTextRef.current, parserWarning: parsed.warning } : message);
-        return { ...session, messages, updatedAt: new Date().toISOString() };
-      });
+      updateActiveSession(s => ({ ...s, messages: s.messages.map(m => m.id === assistantId ? { ...m, content: parsed.content, raw: streamingTextRef.current, parserWarning: parsed.warning } : m), updatedAt: new Date().toISOString() }));
     } catch (error) {
       if ((error as Error).name === 'AbortError') return;
-      const errorMessage = getChatErrorText(error);
-      const errorKind = getChatErrorKind(error);
-      updateActiveSession((session) => {
-        const messages = session.messages.map((message) => message.id === assistantId ? { ...message, content: { type: 'error', status: errorKind, message: errorMessage } } : message);
-        return { ...session, messages, updatedAt: new Date().toISOString() };
-      });
+      updateActiveSession(s => ({ ...s, messages: s.messages.map(m => m.id === assistantId ? { ...m, content: { type: 'error', status: getChatErrorKind(error), message: getChatErrorText(error) } } : m), updatedAt: new Date().toISOString() }));
     } finally {
       setLoading(false); abortRef.current = null; streamingMessageIdRef.current = null; streamingTextRef.current = '';
     }
   }
 
-  function updateActiveSession(updater: (session: ChatSession) => ChatSession) { setSessions((current) => sortSessions(current.map((session) => session.id === activeId ? updater(session) : session))); }
-  function changeMode(nextMode: string) { setMode(nextMode); updateActiveSession((session) => ({ ...session, mode: nextMode, updatedAt: new Date().toISOString() })); }
-  function startNewChat() { const session = createChatSession(); setSessions((current) => [session, ...current]); setActiveId(session.id); setMode(session.mode); setPrompt(''); }
+  function updateActiveSession(updater: (s: ChatSession) => ChatSession) { setSessions(curr => sortSessions(curr.map(s => s.id === activeId ? updater(s) : s))); }
+  function changeMode(next: string) { setMode(next); updateActiveSession(s => ({ ...s, mode: next, updatedAt: new Date().toISOString() })); }
+  function startNewChat() { const s = createChatSession(); setSessions(curr => [s, ...curr]); setActiveId(s.id); setMode(s.mode); setPrompt(''); }
   function stopGeneration() { abortRef.current?.abort(); setLoading(false); }
-  function deleteSession(id: string) { if (!window.confirm('Delete this conversation? This cannot be undone.')) return; const remaining = sessions.filter((item) => item.id !== id); const next = remaining.length ? remaining : [createChatSession()]; setSessions(next); if (id === activeId) setActiveId(next[0].id); }
-  function renameSession(id: string) { const name = window.prompt('Rename conversation'); if (!name?.trim()) return; setSessions((current) => current.map((item) => item.id === id ? { ...item, title: name.trim(), updatedAt: new Date().toISOString() } : item)); }
-  function patchSession(id: string, patch: Partial<ChatSession>) { setSessions((current) => sortSessions(current.map((item) => item.id === id ? { ...item, ...patch, updatedAt: new Date().toISOString() } : item))); }
-  function clearContext() { setPrompt((current) => current ? `${current}\n\nContext cleared.` : 'Context cleared.'); }
+  function deleteSession(id: string) { if (!window.confirm('Delete this conversation?')) return; const rem = sessions.filter(s => s.id !== id); const next = rem.length ? rem : [createChatSession()]; setSessions(next); if (id === activeId) setActiveId(next[0].id); }
+  function renameSession(id: string) { const name = window.prompt('Rename conversation'); if (!name?.trim()) return; setSessions(curr => curr.map(s => s.id === id ? { ...s, title: name.trim(), updatedAt: new Date().toISOString() } : s)); }
+  function patchSession(id: string, patch: Partial<ChatSession>) { setSessions(curr => sortSessions(curr.map(s => s.id === id ? { ...s, ...patch, updatedAt: new Date().toISOString() } : s))); }
   function retryLastMessage() { if (lastUserPromptRef.current) sendMessage(undefined, lastUserPromptRef.current); }
-  function setSessionContext(patch: ContextPatch) { updateActiveSession((session) => ({ ...session, ...patch, updatedAt: new Date().toISOString() })); }
+  function setSessionContext(patch: ContextPatch) { updateActiveSession(s => ({ ...s, ...patch, updatedAt: new Date().toISOString() })); }
 
   return (
-    <main className="min-h-[calc(100vh-88px)] bg-[var(--bg)] text-[var(--text)]">
-      {(showHistory) ? <button aria-label="Close assistant drawer" className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => { setShowHistory(false); }} /> : null}
-      <div className="flex h-[calc(100dvh-88px)] overflow-hidden rounded-none sm:rounded-3xl">
-        <ConversationSidebar sessions={sessions} activeId={activeId} search={search} setSearch={setSearch} setActiveId={setActiveId} startNewChat={startNewChat} renameSession={renameSession} deleteSession={deleteSession} patchSession={patchSession} mobileOpen={showHistory} onClose={() => setShowHistory(false)} />
-        <section className="flex min-w-0 flex-1 flex-col bg-[var(--bg)]">
-          <ConversationHeader mode={activeMode.label} onOpenHistory={() => setShowHistory(true)} onNewChat={startNewChat} onOpenToolRequest={() => setToolRequestOpen(true)} health={health} session={activeSession} onContextChange={setSessionContext} />
-          <AgentModeSelector mode={mode} setMode={changeMode} />
-          <ChatMessageList messages={activeSession.messages} loading={loading} mode={activeMode.label} user={user} onUsePrompt={setPrompt} onRetry={retryLastMessage} />
-          <ChatComposer value={prompt} setValue={setPrompt} onSubmit={sendMessage} onStop={stopGeneration} loading={loading} disabled={!authorizationAvailable} authLoading={authLoading} />
+    <main className="min-h-[calc(100vh-88px)] bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
+      {showHistory && <button aria-label="Close drawer" className="fixed inset-0 z-30 bg-black/40 backdrop-blur-sm lg:hidden" onClick={() => setShowHistory(false)} />}
+      <div className="flex h-[calc(100dvh-88px)] overflow-hidden">
+        {/* Sidebar */}
+        <aside className={`${showHistory ? 'fixed inset-y-0 left-0 z-40 flex' : 'hidden'} w-[300px] shrink-0 flex-col border-r border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 lg:static lg:flex`}>
+          <div className="flex items-center justify-between p-4 pb-3">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow-sm">
+                <Bot className="h-4 w-4 text-white" />
+              </div>
+              <span className="text-[13px] font-bold text-gray-900 dark:text-gray-100">Conversations</span>
+            </div>
+            <div className="flex gap-1">
+              <button className="lg:hidden grid h-7 w-7 place-items-center rounded-lg text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:bg-gray-800" onClick={() => setShowHistory(false)}><XCircle className="h-4 w-4" /></button>
+              <button onClick={startNewChat} className="grid h-7 w-7 place-items-center rounded-lg bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-sm hover:opacity-90 transition-opacity" title="New chat"><MessageSquarePlus className="h-3.5 w-3.5" /></button>
+            </div>
+          </div>
+
+          <div className="mx-3 mb-3">
+            <label className="flex h-9 items-center gap-2 rounded-xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 px-3 transition-all focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-400/20">
+              <Search className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500 shrink-0" />
+              <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search chats…" className="w-full bg-transparent text-[12.5px] text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:text-gray-500 outline-none" />
+            </label>
+          </div>
+
+          <div className="flex-1 overflow-y-auto px-2 pb-3 space-y-1 [scrollbar-width:thin]">
+            {(() => {
+              const filtered = sessions.filter(s => !s.archived && s.title.toLowerCase().includes(search.toLowerCase()));
+              const groups = groupSessions(filtered);
+              const entries = Object.entries(groups).filter(([, rows]) => rows.length);
+              if (!entries.length) return <p className="px-3 py-6 text-center text-[12px] text-gray-500 dark:text-gray-400">No conversations found</p>;
+              return entries.map(([group, rows], gi) => (
+                <div key={group}>
+                  {gi > 0 && <div className="mx-2 my-2 h-px bg-gray-200 dark:bg-gray-700" />}
+                  <p className="px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-widest text-gray-400 dark:text-gray-500">{group}</p>
+                  {rows.map(session => (
+                    <SidebarItem key={session.id} session={session} active={session.id === activeId}
+                      onSelect={() => { setActiveId(session.id); setShowHistory(false); }}
+                      onRename={() => renameSession(session.id)}
+                      onDelete={() => deleteSession(session.id)}
+                      onPin={() => patchSession(session.id, { pinned: !session.pinned })}
+                      onArchive={() => patchSession(session.id, { archived: true })}
+                    />
+                  ))}
+                </div>
+              ));
+            })()}
+          </div>
+        </aside>
+
+        {/* Main chat area */}
+        <section className="flex min-w-0 flex-1 flex-col bg-gray-50 dark:bg-gray-950">
+
+          {/* Header */}
+          <header className="shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/80 backdrop-blur-sm px-4 py-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <button className="lg:hidden text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100" onClick={() => setShowHistory(true)}><Menu className="h-5 w-5" /></button>
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 shadow">
+                  <Zap className="h-4.5 w-4.5 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <h1 className="text-[15px] font-bold text-gray-900 dark:text-gray-100 truncate">NoovaStack AI Assistant</h1>
+                    <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${health?.available ? 'bg-emerald-500/15 text-emerald-600' : health ? 'bg-red-500/15 text-red-500' : 'bg-amber-500/15 text-amber-600'}`}>
+                      <span className={`h-1.5 w-1.5 rounded-full ${health?.available ? 'bg-emerald-500 animate-pulse' : health ? 'bg-red-500' : 'bg-amber-500'}`} />
+                      {health?.available ? 'Connected' : health ? 'Unavailable' : 'Checking…'}
+                    </span>
+                  </div>
+                  {health?.model && <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{health.model} · {health.provider}</p>}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <ContextSelector session={activeSession} onContextChange={setSessionContext} />
+
+                <button onClick={startNewChat} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:opacity-90 transition-opacity">
+                  <MessageSquarePlus className="h-3.5 w-3.5" /> New Chat
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* Mode tabs */}
+          <div className="shrink-0 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/60 px-4">
+            <div className="flex gap-1 overflow-x-auto py-2 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+              {modes.map(m => (
+                <button key={m.id} onClick={() => changeMode(m.id)} title={m.tip}
+                  className={`shrink-0 flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-[12.5px] font-medium transition-all ${mode === m.id ? 'bg-gradient-to-r from-violet-500 to-indigo-600 text-white shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:bg-gray-800 hover:text-gray-900 dark:text-gray-100'}`}>
+                  <span className="text-[13px]">{m.emoji}</span>
+                  {m.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Messages */}
+          <MessageList messages={activeSession.messages} loading={loading} mode={activeMode} user={user} onUsePrompt={setPrompt} onRetry={retryLastMessage} />
+
+          {/* Composer */}
+          <Composer value={prompt} setValue={setPrompt} onSubmit={sendMessage} onStop={stopGeneration} loading={loading} disabled={!authorizationAvailable} authLoading={authLoading} mode={activeMode} />
         </section>
-        <ContextPanelRail open={showContext} onToggle={() => setShowContext((v) => !v)} health={health} session={activeSession} />
       </div>
-      <AgentToolRequestPanel open={toolRequestOpen} onClose={() => setToolRequestOpen(false)} />
     </main>
   );
 }
 
-function ConversationSidebar(props: { sessions: ChatSession[]; activeId: string; search: string; setSearch: (v: string) => void; setActiveId: (id: string) => void; startNewChat: () => void; renameSession: (id: string) => void; deleteSession: (id: string) => void; patchSession: (id: string, patch: Partial<ChatSession>) => void; mobileOpen: boolean; onClose: () => void }) {
-  const filtered = props.sessions.filter((item) => !item.archived && item.title.toLowerCase().includes(props.search.toLowerCase()));
-  const groups = groupSessions(filtered);
-  const groupEntries = Object.entries(groups).filter(([, rows]) => rows.length);
+// ── Sidebar item ──────────────────────────────────────────────────────────────
+function SidebarItem({ session, active, onSelect, onRename, onDelete, onPin, onArchive }: { session: ChatSession; active: boolean; onSelect: () => void; onRename: () => void; onDelete: () => void; onPin: () => void; onArchive: () => void }) {
   return (
-    <aside className={`${props.mobileOpen ? 'fixed inset-y-0 left-0 z-40 flex' : 'hidden'} w-[86vw] max-w-[280px] shrink-0 flex-col border-r border-[var(--border)] bg-[var(--surface)] shadow-xl lg:static lg:flex lg:w-[260px] lg:shadow-none`}>
-      <div className="flex items-center justify-between px-3 py-3 pb-2">
-        <h2 className="text-[13px] font-bold text-[var(--text)]">Conversations</h2>
-        <div className="flex items-center gap-1.5">
-          <button className="rounded-lg p-1 text-[var(--muted)] hover:bg-[var(--surface-2)] lg:hidden" onClick={props.onClose}><XCircle className="h-4 w-4" /></button>
-          <button onClick={props.startNewChat} className="grid h-[26px] w-[26px] place-items-center rounded-lg bg-[var(--accent)] text-white hover:bg-[var(--accent-hover)]" title="New Chat"><MessageSquarePlus className="h-3.5 w-3.5" /></button>
+    <div className={`group relative rounded-xl px-3 py-2 cursor-pointer transition-all ${active ? 'bg-gradient-to-r from-violet-500/10 to-indigo-500/10 border border-violet-400/30' : 'border border-transparent hover:bg-gray-100 dark:bg-gray-800'}`} onClick={onSelect}>
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className="text-[13px]">{emojiForMode(session.mode)}</span>
+            <span className="truncate text-[12.5px] font-semibold text-gray-900 dark:text-gray-100">{session.title}</span>
+            {session.pinned && <Pin className="h-2.5 w-2.5 shrink-0 text-violet-500" />}
+          </div>
+          <div className="mt-0.5 flex items-center gap-1.5 text-[11px] text-gray-500 dark:text-gray-400">
+            <Clock className="h-2.5 w-2.5 shrink-0" />{formatTime(session.updatedAt)}
+          </div>
         </div>
       </div>
-      <div className="mx-3 mb-2.5">
-        <label className="flex h-[32px] items-center gap-2 rounded-[10px] border border-[var(--border)] bg-[var(--bg)] px-2.5 transition focus-within:border-[var(--accent)]/50 focus-within:shadow-[0_0_0_2px_var(--accent-soft)]">
-          <Search className="h-[13px] w-[13px] text-[var(--light)]" />
-          <input value={props.search} onChange={(e) => props.setSearch(e.target.value)} placeholder="Search conversations" className="w-full bg-transparent text-[12px] text-[var(--text)] placeholder:text-[var(--light)] outline-none" />
-        </label>
-      </div>
-      {!props.sessions.length ? <SkeletonList /> : null}
-      {filtered.length ? (
-        <div className="flex-1 overflow-y-auto px-2 pb-3 [scrollbar-width:thin] [&::-webkit-scrollbar]:w-[4px] [&::-webkit-scrollbar-thumb]:rounded-[4px] [&::-webkit-scrollbar-thumb]:bg-[var(--border)] [&::-webkit-scrollbar-track]:bg-transparent">
-          {groupEntries.map(([group, rows], index) => (
-            <div key={group}>
-              {index > 0 ? <div className="mx-3.5 my-2 h-px bg-[var(--border)]" /> : null}
-              <p className="px-3 pb-1 pt-1 text-[10px] font-bold uppercase tracking-[0.05em] text-[var(--light)]">{group}</p>
-              <div className="space-y-[2px]">
-                {rows.map((session) => (
-                  <ConversationListItem key={session.id} session={session} active={session.id === props.activeId} onSelect={() => { props.setActiveId(session.id); props.onClose(); }} onRename={() => props.renameSession(session.id)} onDelete={() => props.deleteSession(session.id)} onPin={() => props.patchSession(session.id, { pinned: !session.pinned })} onArchive={() => props.patchSession(session.id, { archived: true })} />
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="mx-3 rounded-lg border border-dashed border-[var(--border)] bg-[var(--bg)] p-3 text-xs text-[var(--muted)]">No conversations found.</div>
-      )}
-    </aside>
-  );
-}
-
-function ConversationListItem({ session, active, onSelect, onRename, onDelete, onPin, onArchive }: { session: ChatSession; active: boolean; onSelect: () => void; onRename: () => void; onDelete: () => void; onPin: () => void; onArchive: () => void }) {
-  return (
-    <div className={`group rounded-[10px] px-3 py-2 ${active ? 'border border-[var(--accent)]/30 bg-[var(--accent-soft)]' : 'border border-transparent hover:bg-[var(--surface-2)]'}`}>
-      <button onClick={onSelect} className="w-full text-left">
-        <div className="flex items-center gap-2">
-          <span className="truncate text-[13px] font-semibold text-[var(--text)]">{session.title}</span>
-          {session.pinned ? <Pin className="h-3 w-3 text-[var(--accent)]" /> : null}
-        </div>
-        <div className="mt-0.5 flex items-center gap-[5px] text-[11px] text-[var(--muted)]">
-          <span className="rounded-md bg-[var(--surface-2)] px-[5px] py-px text-[10px] font-medium text-[var(--muted)]">{labelForMode(session.mode)}</span>
-          <span>{formatTime(session.updatedAt)}</span>
-        </div>
-      </button>
-      <div className="mt-1.5 hidden gap-1 group-hover:flex">
-        <SmallAction label="Rename" icon={MoreHorizontal} onClick={onRename} />
-        <SmallAction label="Pin" icon={Pin} onClick={onPin} />
-        <SmallAction label="Archive" icon={Archive} onClick={onArchive} />
-        <SmallAction label="Delete" icon={Trash2} onClick={onDelete} danger />
+      <div className="absolute right-2 top-2 hidden gap-0.5 group-hover:flex" onClick={e => e.stopPropagation()}>
+        <IconBtn label="Rename" icon={MoreHorizontal} onClick={onRename} />
+        <IconBtn label={session.pinned ? 'Unpin' : 'Pin'} icon={Pin} onClick={onPin} />
+        <IconBtn label="Archive" icon={Archive} onClick={onArchive} />
+        <IconBtn label="Delete" icon={Trash2} onClick={onDelete} danger />
       </div>
     </div>
   );
 }
 
-function ConversationHeader({ mode, onOpenHistory, onNewChat, onOpenToolRequest, health, session, onContextChange }: { mode: string; onOpenHistory: () => void; onNewChat: () => void; onOpenToolRequest: () => void; health: Health | null; session: ChatSession; onContextChange: (patch: ContextPatch) => void }) {
+function IconBtn({ label, icon: Icon, onClick, danger }: { label: string; icon: typeof Bot; onClick: () => void; danger?: boolean }) {
   return (
-    <header className="bg-[var(--bg)] px-4 py-3 lg:px-6">
-      <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 min-w-0">
-          <button className="lg:hidden text-[var(--text)]" onClick={onOpenHistory}><Menu className="h-5 w-5" /></button>
-          <h1 className="text-[16px] font-bold text-[var(--text)]">NoovaStack Security Assistant</h1>
-          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${health?.available ? 'bg-[var(--success)]/15 text-[var(--success)]' : health ? 'bg-[var(--danger)]/15 text-[var(--danger)]' : 'bg-[var(--warn)]/15 text-[var(--warn)]'}`}>{health?.available ? 'Connected' : health ? 'Unavailable' : 'Checking'}</span>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <HeaderButton onClick={onOpenToolRequest} label="Request Tool" icon={Wrench} />
-          <HeaderButton onClick={onNewChat} label="New Chat" />
-          <Link href="/ai-agents/runs"><HeaderButton onClick={() => undefined} label="Autonomous" icon={Bot} /></Link>
-          <ContextSelectorPanel session={session} onChange={onContextChange} />
-        </div>
-      </div>
-    </header>
+    <button aria-label={label} onClick={onClick} className={`grid h-6 w-6 place-items-center rounded-lg transition-colors ${danger ? 'hover:bg-red-500/15 hover:text-red-500 text-gray-500 dark:text-gray-400' : 'hover:bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100'}`}>
+      <Icon className="h-3 w-3" />
+    </button>
   );
 }
 
-function ContextSelectorPanel({ session, onChange }: { session: ChatSession; onChange: (patch: ContextPatch) => void }) {
-  const [open, setOpen] = useState(false);
+// ── Context selector ──────────────────────────────────────────────────────────
+function ContextSelector({ session, onContextChange }: { session: ChatSession; onContextChange: (p: ContextPatch) => void }) {
   const { data: projects } = useProjects();
-  const { data: engagements } = useEngagements(session.contextProjectId);
-  const { data: findings } = useFindings(session.contextProjectId ? `?project_id=${session.contextProjectId}` : '');
-  const selectedProject = projects?.find((p) => p.id === session.contextProjectId);
-  const hasSelection = Boolean(session.contextProjectId || session.contextEngagementId || session.contextFindingId);
+  const { data: engagements } = useEngagements(session.contextProjectId ?? undefined);
+  const hasCtx = session.contextProjectId || session.contextEngagementId || session.contextFindingId;
 
   return (
-    <div className="relative">
-      <HeaderButton onClick={() => setOpen((v) => !v)} label={selectedProject ? selectedProject.name : 'Select Context'} icon={hasSelection ? ShieldCheck : undefined} />
-      {open ? (
-        <>
-          <button aria-label="Close context selector" className="fixed inset-0 z-40 cursor-default" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-[calc(100%+6px)] z-50 w-[260px] rounded-2xl border border-[var(--border)] bg-[var(--surface)] p-3 shadow-xl">
-            <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted)]">Scope this chat</p>
-            <div className="space-y-2">
-              <ContextField label="Project">
-                <select value={session.contextProjectId ?? ''} onChange={(e) => onChange({ contextProjectId: e.target.value || undefined, contextEngagementId: undefined, contextFindingId: undefined })} className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]/50">
-                  <option value="">No project selected</option>
-                  {projects?.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                </select>
-              </ContextField>
-              <ContextField label="Engagement">
-                <select value={session.contextEngagementId ?? ''} disabled={!session.contextProjectId} onChange={(e) => onChange({ contextEngagementId: e.target.value || undefined })} className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-50">
-                  <option value="">No engagement selected</option>
-                  {engagements?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-                </select>
-              </ContextField>
-              <ContextField label="Finding">
-                <select value={session.contextFindingId ?? ''} disabled={!session.contextProjectId} onChange={(e) => onChange({ contextFindingId: e.target.value || undefined })} className="w-full rounded-lg border border-[var(--border)] bg-[var(--bg)] px-2 py-1.5 text-[12px] text-[var(--text)] outline-none focus:border-[var(--accent)]/50 disabled:cursor-not-allowed disabled:opacity-50">
-                  <option value="">No finding selected</option>
-                  {findings?.map((f) => <option key={f.id} value={f.id}>{f.title}</option>)}
-                </select>
-              </ContextField>
-            </div>
-            <div className="mt-3 flex items-center justify-between">
-              <button type="button" disabled={!hasSelection} onClick={() => onChange({ contextProjectId: undefined, contextEngagementId: undefined, contextFindingId: undefined })} className="text-[11px] font-semibold text-[var(--muted)] hover:text-[var(--danger)] disabled:cursor-not-allowed disabled:opacity-40">Clear</button>
-              <button type="button" onClick={() => setOpen(false)} className="rounded-lg bg-[var(--accent)] px-3 py-1 text-[11px] font-semibold text-white hover:bg-[var(--accent-hover)]">Done</button>
+    <div className="relative group">
+      <button className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[12px] font-medium transition-colors ${hasCtx ? 'border-violet-400/40 bg-violet-500/10 text-violet-600' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:bg-gray-800 hover:text-gray-900 dark:text-gray-100'}`}>
+        <ChevronRight className="h-3.5 w-3.5" />
+        {hasCtx ? 'Context set' : 'Set context'}
+      </button>
+      <div className="absolute right-0 top-full z-50 mt-2 hidden w-72 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 shadow-xl group-focus-within:block group-hover:block">
+        <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Session context</p>
+        <CtxSelect label="Project" value={session.contextProjectId ?? ''} onChange={v => onContextChange({ contextProjectId: v || undefined, contextEngagementId: undefined })}
+          options={(projects ?? []).map((p: { id: string; name: string }) => ({ value: p.id, label: p.name }))} />
+        {session.contextProjectId && (
+          <CtxSelect label="Engagement" value={session.contextEngagementId ?? ''} onChange={v => onContextChange({ contextEngagementId: v || undefined })}
+            options={(engagements ?? []).map((e: { id: string; name: string }) => ({ value: e.id, label: e.name }))} />
+        )}
+        {hasCtx && <button onClick={() => onContextChange({ contextProjectId: undefined, contextEngagementId: undefined, contextFindingId: undefined })} className="mt-1 w-full rounded-lg py-1 text-[11px] text-red-500 hover:bg-red-500/10 transition-colors">Clear context</button>}
+      </div>
+    </div>
+  );
+}
+
+function CtxSelect({ label, value, onChange, options }: { label: string; value: string; onChange: (v: string) => void; options: { value: string; label: string }[] }) {
+  return (
+    <div className="mb-2">
+      <label className="mb-0.5 block text-[11px] font-medium text-gray-500 dark:text-gray-400">{label}</label>
+      <select value={value} onChange={e => onChange(e.target.value)} className="w-full rounded-lg border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 px-2 py-1.5 text-[12px] text-gray-900 dark:text-gray-100 outline-none focus:border-violet-400">
+        <option value="">— none —</option>
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </select>
+    </div>
+  );
+}
+
+// ── Message list ──────────────────────────────────────────────────────────────
+function MessageList({ messages, loading, mode, user, onUsePrompt, onRetry }: { messages: ChatMessage[]; loading: boolean; mode: typeof modes[0]; user: User | null | undefined; onUsePrompt: (p: string) => void; onRetry: () => void }) {
+  const bottomRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages.length, loading]);
+
+  const suggestions = MODE_SUGGESTIONS[mode.id] ?? MODE_SUGGESTIONS.general;
+  const onlyWelcome = messages.length === 1 && messages[0].id === 'welcome';
+
+  return (
+    <div className="flex-1 overflow-y-auto px-4 py-4 space-y-4 [scrollbar-width:thin]">
+      {messages.map(msg => {
+        if (msg.role === 'user') return <UserBubble key={msg.id} message={msg} user={user} />;
+        if (msg.role === 'error') return <ErrorBubble key={msg.id} message={msg} onRetry={onRetry} />;
+        return <AssistantBubble key={msg.id} message={msg} mode={mode} onRetry={onRetry} />;
+      })}
+
+      {loading && !messages.some(m => m.role === 'assistant' && (m.content === '__STREAMING__' || (typeof m.content === 'object' && (m.content as AssistantContent).type === 'streaming'))) && (
+        <div className="flex items-start gap-3">
+          <AvatarBot />
+          <div className="rounded-2xl rounded-tl-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3">
+            <div className="flex gap-1 items-center">
+              <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce [animation-delay:0ms]" />
+              <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce [animation-delay:150ms]" />
+              <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce [animation-delay:300ms]" />
             </div>
           </div>
-        </>
-      ) : null}
-    </div>
-  );
-}
+        </div>
+      )}
 
-function ContextField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <label className="block">
-      <span className="mb-1 block text-[10px] font-medium text-[var(--muted)]">{label}</span>
-      {children}
-    </label>
-  );
-}
-
-function AgentModeSelector({ mode, setMode }: { mode: string; setMode: (mode: string) => void }) {
-  return (
-    <div className="bg-[var(--bg)] px-4 pb-3 lg:px-6">
-      <div className="mx-auto max-w-5xl">
-        <div className="flex gap-2 overflow-x-auto pb-1">
-          {modes.map((item) => (
-            <button key={item.id} title={item.tip} onClick={() => setMode(item.id)} className={`shrink-0 rounded-full border px-3 py-1.5 text-[12px] font-semibold transition ${mode === item.id ? 'border-[var(--accent)]/40 bg-[var(--accent-soft)] text-[var(--accent)]' : 'border-[var(--border)] bg-[var(--surface)] text-[var(--muted)] hover:border-[var(--accent)]/40 hover:text-[var(--accent)]'}`}>
-              {item.label}
+      {onlyWelcome && !loading && (
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {suggestions.map(s => (
+            <button key={s.label} onClick={() => onUsePrompt(s.prompt)}
+              className="flex items-center gap-2.5 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 px-4 py-3 text-left text-[12.5px] font-medium text-gray-900 dark:text-gray-100 hover:border-violet-400/40 hover:bg-violet-500/5 transition-all group">
+              <s.icon className="h-4 w-4 shrink-0 text-violet-500 group-hover:scale-110 transition-transform" />
+              {s.label}
             </button>
           ))}
         </div>
-      </div>
+      )}
+
+      <div ref={bottomRef} />
     </div>
   );
 }
 
-function ChatMessageList({ messages, loading, mode, user, onUsePrompt, onRetry }: { messages: ChatMessage[]; loading: boolean; mode: string; user: User | null; onUsePrompt: (value: string) => void; onRetry: () => void }) {
-  const nearEmpty = messages.length <= 1;
-  const groups = useMemo(() => groupMessages(messages), [messages]);
+function AvatarBot() {
   return (
-    <div className="flex-1 overflow-y-auto bg-[var(--bg)] p-[18px]">
-      <div className="mx-auto max-w-[900px] space-y-[14px]">
-        {nearEmpty ? <AssistantEmptyState onUsePrompt={onUsePrompt} /> : groups.map((group, groupIndex) => {
-          if (group.role === 'user') {
-            return <UserMessageGroup key={group.id} messages={group.messages} user={user} />;
-          }
-          if (group.role === 'error') {
-            return group.messages.map((message) => <ErrorMessage key={message.id} message={message} />);
-          }
-          return group.messages.map((message) => <AssistantMessage key={message.id} message={message} onUsePrompt={onUsePrompt} onRetry={onRetry} />);
-        })}
-        {loading ? <StreamingIndicator mode={mode} /> : null}
-      </div>
+    <div className="shrink-0 h-8 w-8 rounded-xl bg-gradient-to-br from-violet-500 to-indigo-600 flex items-center justify-center shadow-sm">
+      <Zap className="h-4 w-4 text-white" />
     </div>
   );
 }
 
-function AssistantEmptyState({ onUsePrompt }: { onUsePrompt: (value: string) => void }) {
-  const prompts = ['Plan a safe assessment', 'Review a finding for me', 'How do I fix this vulnerability?', 'Draft a report summary', 'What evidence do I need?'];
-  const visible = prompts.slice(0, 3);
-  const more = prompts.length - visible.length;
+function AvatarUser({ user }: { user: User | null | undefined }) {
+  const initials = user?.full_name?.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase() ?? user?.username?.[0]?.toUpperCase() ?? '?';
   return (
-    <section className="py-12 sm:py-20">
-      <div className="mx-auto max-w-2xl text-center">
-        <div className="mx-auto mb-4 grid h-12 w-12 place-items-center rounded-2xl bg-[var(--surface-2)] text-[var(--accent)] shadow-[var(--shadow)]">
-          <Bot className="h-6 w-6" />
+    <div className="shrink-0 h-8 w-8 rounded-xl bg-gradient-to-br from-slate-500 to-slate-700 flex items-center justify-center shadow-sm text-white text-[11px] font-bold">
+      {initials}
+    </div>
+  );
+}
+
+function UserBubble({ message, user }: { message: ChatMessage; user: User | null | undefined }) {
+  const text = typeof message.content === 'string' ? message.content : '';
+  const [copied, setCopied] = useState(false);
+  function copy() { navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }
+  return (
+    <div className="flex items-start justify-end gap-3">
+      <div className="group max-w-[75%] relative">
+        <div
+          className="rounded-2xl rounded-tr-sm px-4 py-3 text-[13.5px] shadow-sm"
+          style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)', color: '#ffffff' }}
+        >
+          <p className="whitespace-pre-wrap break-words">{text}</p>
         </div>
-        <h2 className="text-xl font-semibold text-[var(--text)]">Hi — what are we working on today?</h2>
-        <p className="mt-2 text-sm leading-6 text-[var(--muted)]">Think of me as a pentester on your team: I plan safe assessments, triage findings, and turn vulnerabilities into clear, actionable fixes.</p>
+        <div className="mt-1 flex items-center justify-end gap-2">
+          <span className="text-[10px] text-gray-500 dark:text-gray-400">{formatTime(message.createdAt)}</span>
+          <button onClick={copy} className="hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100">
+            {copied ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+          </button>
+        </div>
       </div>
-      <div className="mx-auto mt-6 flex max-w-xl flex-wrap justify-center gap-2">
-        {visible.map((prompt) => <button key={prompt} onClick={() => onUsePrompt(prompt)} className="inline-flex items-center gap-2 rounded-[20px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[5px] text-[12px] font-medium text-[var(--text)] transition hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]"><Sparkles className="h-[13px] w-[13px]" />{prompt}</button>)}
-        {more > 0 ? <button className="rounded-[20px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[5px] text-[12px] font-medium text-[var(--muted)]">+ {more} more</button> : null}
-      </div>
-    </section>
-  );
-}
-
-function UserMessageGroup({ messages, user }: { messages: ChatMessage[]; user: User | null }) {
-  return (
-    <div className="flex items-end justify-end gap-2">
-      <div className="flex max-w-[78%] flex-col items-end gap-[4px]">
-        {messages.map((message, index) => (
-          <div key={message.id} className={`rounded-[14px] bg-[var(--accent)] px-[13px] py-[9px] text-[13px] leading-[1.55] text-white shadow-[var(--shadow)] ${index === messages.length - 1 ? 'rounded-br-[4px]' : ''} ${index === 0 ? 'rounded-tr-[14px]' : ''}`}>
-            <div className="whitespace-pre-wrap break-words">{typeof message.content === 'string' ? message.content : '[User input]'}</div>
-          </div>
-        ))}
-      </div>
-      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[var(--accent)] text-[11px] font-bold text-white shadow-[var(--shadow)]" title={displayName(user)}>
-        {getInitials(displayName(user))}
-      </div>
+      <AvatarUser user={user} />
     </div>
   );
 }
 
-function AssistantMessage({ message, onUsePrompt, onRetry }: { message: ChatMessage; onUsePrompt: (value: string) => void; onRetry: () => void }) {
-  const content = typeof message.content === 'string' ? safeParseStringContent(message.content) : message.content;
-  const [showRaw, setShowRaw] = useState(false);
+function AssistantBubble({ message, mode, onRetry }: { message: ChatMessage; mode: typeof modes[0]; onRetry: () => void }) {
+  const content = message.content;
+  const [copied, setCopied] = useState(false);
 
-  if (content.type === 'streaming') {
+  if (content === '__STREAMING__' || (typeof content === 'object' && (content as AssistantContent).type === 'streaming')) {
     return (
       <div className="flex items-start gap-3">
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[var(--surface-2)] text-[var(--accent)] shadow-[var(--shadow)]">
-          <Bot className="h-4 w-4" />
-        </div>
-        <div className="flex flex-col gap-2 pt-1">
-          <div className="flex items-center gap-1.5">
-            <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--accent)]" />
-            <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--accent)] [animation-delay:120ms]" />
-            <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--accent)] [animation-delay:240ms]" />
+        <AvatarBot />
+        <div className="rounded-2xl rounded-tl-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3">
+          <div className="flex gap-1 items-center">
+            <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce [animation-delay:0ms]" />
+            <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce [animation-delay:150ms]" />
+            <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce [animation-delay:300ms]" />
           </div>
-          <p className="text-[11px] text-[var(--muted)]">Generating response...</p>
         </div>
       </div>
     );
   }
 
-  return (
-    <div className="flex flex-col items-start gap-1">
-      <div className="flex items-center gap-1.5 px-1 text-[11px] text-[var(--muted)]">
-        <span className="h-[5px] w-[5px] rounded-full bg-[var(--success)]" />
-        <span className="font-medium text-[var(--text)]">NoovaStack Assistant</span>
-        <span className="rounded-[10px] bg-[var(--surface-2)] px-[6px] py-[1px] text-[10px] font-semibold text-[var(--muted)]">{labelForMode(message.mode ?? 'general')}</span>
-        <span>·</span>
-        <span>{formatTime(message.createdAt)}</span>
-      </div>
-      <div className="max-w-[78%] rounded-[14px] rounded-bl-[4px] border border-[var(--border)] bg-[var(--surface)] px-[14px] py-[10px] text-[13px] leading-[1.55] text-[var(--text)] shadow-[var(--shadow)]">
-        {renderAssistantContent(content, () => setShowRaw((v) => !v), onRetry)}
-        {message.parserWarning ? <p className="mt-2 text-xs text-[var(--warn)]">{message.parserWarning}</p> : null}
-      </div>
-      {showRaw ? <pre className="mt-1 max-h-48 max-w-[78%] overflow-auto rounded-lg border border-[var(--border)] bg-[var(--surface)] p-2 text-[10px] text-[var(--muted)]">{JSON.stringify(message.raw ?? content, null, 2)}</pre> : null}
-      <SuggestionChips mode={message.mode ?? 'general'} onUse={onUsePrompt} />
-    </div>
-  );
-}
-
-function safeParseStringContent(text: string): AssistantContent {
-  if (!text || text === '__STREAMING__') return { type: 'streaming' } as AssistantContent;
-  try {
-    const parsed = JSON.parse(text);
-    if (typeof parsed === 'object' && parsed !== null) {
-      const result = assistantContentSchema.safeParse(parsed);
-      if (result.success) return result.data;
-      return { type: 'plain', message: parsed.message ?? parsed.summary ?? JSON.stringify(parsed) };
-    }
-    return { type: 'plain', message: text };
-  } catch {
-    return { type: 'plain', message: text };
-  }
-}
-
-function renderAssistantContent(content: AssistantContent, toggleRaw: () => void, onRetry: () => void) {
-  if (content.type === 'error') {
-    return <ErrorMessageCard content={content} onRetry={onRetry} />;
-  }
-  if (content.type === 'structured' || content.type === 'card') {
-    return <GenericStructuredCard content={content} onToggleRaw={toggleRaw} />;
-  }
-  return (
-    <div className="space-y-2">
-      <PlainTextMessage content={content} />
-      {content.type === 'finding_review' ? <FindingReviewCard content={content} onToggleRaw={toggleRaw} /> : null}
-      {content.type === 'remediation' ? <RemediationCard content={content} onToggleRaw={toggleRaw} /> : null}
-      {content.type === 'report_draft' ? <ReportDraftCard content={content} onToggleRaw={toggleRaw} /> : null}
-      {content.tool_calls?.length ? <ToolActivityCard tools={content.tool_calls} onToggleRaw={toggleRaw} /> : null}
-      {(content.evidence?.length || content.evidence_ids?.length) ? <EvidenceReferenceCard content={content} onToggleRaw={toggleRaw} /> : null}
-    </div>
-  );
-}
-
-function PlainTextMessage({ content }: { content: AssistantContent }) {
-  const status = content.status;
-  const statusType = status === 'Rejected' || status === 'rejected' ? 'rejected' : status === 'Accepted' || status === 'accepted' || status === 'Verified' || status === 'verified' ? 'success' : content.warnings?.length ? 'warning' : undefined;
-  return (
-    <div className="space-y-2">
-      <div className="text-[var(--text)]"><MarkdownLite text={content.message ?? content.summary ?? ''} /></div>
-      {statusType ? <CompactStatusCard status={statusType} message={content.message ?? content.summary ?? ''} warnings={content.warnings} /> : null}
-    </div>
-  );
-}
-
-function CompactStatusCard({ status, message, warnings }: { status: 'rejected' | 'success' | 'warning'; message: string; warnings?: string[] }) {
-  const config = {
-    rejected: { icon: XCircle, title: 'Request Rejected', badge: 'Rejected', badgeClass: 'bg-[var(--danger)]/15 text-[var(--danger)]', iconClass: 'text-[var(--danger)]' },
-    success: { icon: CheckCircle2, title: 'Request Accepted', badge: 'Success', badgeClass: 'bg-[var(--success)]/15 text-[var(--success)]', iconClass: 'text-[var(--success)]' },
-    warning: { icon: AlertTriangle, title: 'Warning', badge: 'Warning', badgeClass: 'bg-[var(--warn)]/15 text-[var(--warn)]', iconClass: 'text-[var(--warn)]' },
-  }[status];
-  const Icon = config.icon;
-  const warningText = warnings?.length ? 'Unauthorized changes may compromise security. Modifications require proper authorization.' : undefined;
-  return (
-    <div className="mt-2 overflow-hidden rounded-[12px] border border-[var(--border)] bg-[var(--surface-2)] shadow-[var(--shadow)]">
-      <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-2">
-        <Icon className={`h-4 w-4 ${config.iconClass}`} />
-        <span className="text-[12px] font-semibold text-[var(--text)]">{config.title}</span>
-        <span className={`ml-auto rounded-[10px] px-2 py-0.5 text-[11px] font-bold ${config.badgeClass}`}>{config.badge}</span>
-      </div>
-      <div className="space-y-2 px-3 py-2 text-[13px] leading-[1.5] text-[var(--text)]">
-        <p>{message}</p>
-        {warningText ? (
-          <div className="flex items-center gap-1.5 text-[12px] text-[var(--warn)]">
-            <AlertTriangle className="h-[14px] w-[14px] flex-shrink-0" />
-            <span>{warningText}</span>
+  if (typeof content === 'object' && (content as AssistantContent).type === 'error') {
+    const c = content as AssistantContent;
+    return (
+      <div className="flex items-start gap-3">
+        <AvatarBot />
+        <div className="max-w-[80%] rounded-2xl rounded-tl-sm border border-red-300/30 bg-red-500/10 px-4 py-3">
+          <div className="flex items-center gap-2 mb-1">
+            <AlertTriangle className="h-4 w-4 text-red-500 shrink-0" />
+            <span className="text-[12.5px] font-semibold text-red-500">{c.status ?? 'Error'}</span>
           </div>
-        ) : null}
-      </div>
-    </div>
-  );
-}
-
-function FindingReviewCard({ content, onToggleRaw }: { content: AssistantContent; onToggleRaw: () => void }) {
-  return (
-    <CompactStructuredCard title="Finding Review" icon={CheckCircle2} status={content.recommendation === 'Rejected' ? 'rejected' : content.recommendation === 'Verified' || content.recommendation === 'Accepted' ? 'success' : 'warning'} onToggleRaw={onToggleRaw}>
-      <InfoGrid rows={[['Recommendation', content.recommendation], ['Suggested severity', content.suggested_severity ?? content.severity], ['OWASP category', content.owasp_category], ['CWE', content.cwe], ['Human review required', content.human_review_required === false ? 'No' : 'Yes']]} />
-      <List title="Evidence used" items={content.evidence_ids} />
-      <List title="Missing information" items={content.missing_information} />
-      <CardActions actions={['Accept', 'Edit', 'Reject', 'More Evidence']} />
-    </CompactStructuredCard>
-  );
-}
-
-function RemediationCard({ content, onToggleRaw }: { content: AssistantContent; onToggleRaw: () => void }) {
-  const r = content.remediation;
-  return (
-    <CompactStructuredCard title="Remediation Draft" icon={ShieldCheck} status="success" onToggleRaw={onToggleRaw}>
-      {r?.issue_summary ? <MarkdownLite text={r.issue_summary} /> : null}
-      <List title="Immediate Mitigation" items={r?.immediate_mitigation} />
-      <List title="Long-Term Remediation" items={r?.long_term_remediation} />
-      <List title="Verification Steps" items={r?.verification_steps} />
-      <List title="References" items={r?.references} />
-    </CompactStructuredCard>
-  );
-}
-
-function ReportDraftCard({ content, onToggleRaw }: { content: AssistantContent; onToggleRaw: () => void }) {
-  return (
-    <CompactStructuredCard title="Report Content Draft" icon={FileText} status="success" onToggleRaw={onToggleRaw}>
-      <InfoBlock label="Current Content" value={content.report?.current_content} />
-      <InfoBlock label="AI Suggestion" value={content.report?.ai_suggestion} />
-      <CardActions actions={['Accept', 'Edit', 'Reject', 'Regenerate']} />
-    </CompactStructuredCard>
-  );
-}
-
-function ToolActivityCard({ tools, onToggleRaw }: { tools: z.infer<typeof toolCallSchema>[]; onToggleRaw: () => void }) {
-  return (
-    <CompactStructuredCard title="Safe Tool Activity" icon={Clock} status="success" onToggleRaw={onToggleRaw}>
-      {tools.map((tool, i) => (
-        <div key={i} className="rounded-lg border border-[var(--border)] bg-[var(--bg)] p-2 text-xs">
-          <div className="flex justify-between gap-3">
-            <strong className="text-[var(--text)]">{tool.name ?? 'Approved platform function'}</strong>
-            <StatusText status={tool.status ?? 'Queued'} />
-          </div>
-          <p className="mt-1 text-[var(--muted)]">Duration: {tool.duration ?? 'pending'} · Output: {tool.output_reference ?? 'not available'}</p>
-          <pre className="mt-1 overflow-auto rounded bg-[var(--bg)] p-1.5 text-[10px] text-[var(--muted)]">{JSON.stringify(sanitizeParams(tool.parameters ?? {}), null, 2)}</pre>
-        </div>
-      ))}
-    </CompactStructuredCard>
-  );
-}
-
-function EvidenceReferenceCard({ content, onToggleRaw }: { content: AssistantContent; onToggleRaw: () => void }) {
-  const evidence: EvidenceItem[] = content.evidence?.length ? content.evidence : content.evidence_ids?.map((id) => ({ id, type: 'Evidence reference', source: 'Selected context', captured: 'Captured time unavailable', redaction_status: 'Redacted', integrity_status: 'Integrity verified' })) ?? [];
-  return (
-    <CompactStructuredCard title="Evidence References" icon={FileText} status="success" onToggleRaw={onToggleRaw}>
-      {evidence.map((item) => (
-        <div key={item.id} className="rounded-lg border border-[var(--border)] bg-[var(--bg)] p-2 text-xs">
-          <strong className="text-[var(--text)]">{item.id}</strong>
-          <p className="text-[var(--muted)]">{item.type} · {item.source} · {item.captured ?? 'Captured time unavailable'}</p>
-          <p className="text-[var(--muted)]">{item.redaction_status ?? 'Redacted'} · {item.integrity_status ?? 'Integrity verified'}</p>
-          <div className="mt-1 flex gap-2">
-            <MiniButton label="Preview" />
-            <MiniButton label="Copy" onClick={() => navigator.clipboard?.writeText(item.id ?? '')} />
-          </div>
-        </div>
-      ))}
-    </CompactStructuredCard>
-  );
-}
-
-function CompactStructuredCard({ title, icon: Icon, status, onToggleRaw, children }: { title: string; icon: typeof Bot; status: 'rejected' | 'success' | 'warning'; onToggleRaw: () => void; children: React.ReactNode }) {
-  const badge = { rejected: 'bg-[var(--danger)]/15 text-[var(--danger)]', success: 'bg-[var(--success)]/15 text-[var(--success)]', warning: 'bg-[var(--warn)]/15 text-[var(--warn)]' }[status];
-  const label = { rejected: 'Rejected', success: 'Success', warning: 'Warning' }[status];
-  return (
-    <div className="mt-2 overflow-hidden rounded-[12px] border border-[var(--border)] bg-[var(--surface-2)] shadow-[var(--shadow)]">
-      <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-2">
-        <Icon className={`h-4 w-4 ${status === 'rejected' ? 'text-[var(--danger)]' : status === 'success' ? 'text-[var(--success)]' : 'text-[var(--warn)]'}`} />
-        <span className="text-[12px] font-semibold text-[var(--text)]">{title}</span>
-        <span className={`ml-auto rounded-[10px] px-2 py-0.5 text-[11px] font-bold ${badge}`}>{label}</span>
-        <button type="button" onClick={onToggleRaw} className="rounded p-1 text-[var(--muted)] hover:bg-[var(--surface)]" title="View raw data"><MoreHorizontal className="h-3.5 w-3.5" /></button>
-      </div>
-      <div className="space-y-2 px-3 py-2 text-[13px] leading-[1.5] text-[var(--text)]">{children}</div>
-    </div>
-  );
-}
-
-function SuggestionChips({ mode, onUse }: { mode: string; onUse: (v: string) => void }) {
-  const chips = MODE_SUGGESTIONS[mode] ?? MODE_SUGGESTIONS.general;
-  const visible = chips.slice(0, 3);
-  const more = chips.length - visible.length;
-  return (
-    <div className="ml-1 mt-1.5 flex flex-wrap gap-1.5">
-      {visible.map((chip) => {
-        const Icon = chip.icon;
-        return (
-          <button key={chip.label} onClick={() => onUse(chip.prompt)} className="inline-flex items-center gap-1.5 rounded-[20px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[5px] text-[12px] text-[var(--text)] transition hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]">
-            <Icon className="h-[13px] w-[13px]" />
-            {chip.label}
+          <p className="text-[12.5px] text-gray-900 dark:text-gray-100">{c.message}</p>
+          <button onClick={onRetry} className="mt-2 flex items-center gap-1 text-[11px] text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100 transition-colors">
+            <RefreshCw className="h-3 w-3" /> Retry
           </button>
-        );
-      })}
-      {more > 0 ? <button className="rounded-[20px] border border-[var(--border)] bg-[var(--surface-2)] px-[11px] py-[5px] text-[12px] text-[var(--muted)]">+ {more} more</button> : null}
-    </div>
-  );
-}
-
-function ContextPanelRail({ open, onToggle, health, session }: { open: boolean; onToggle: () => void; health: Health | null; session: ChatSession }) {
-  const [hovered, setHovered] = useState(false);
-  const expanded = open || hovered;
-  const { data: projects } = useProjects();
-  const { data: engagements } = useEngagements(session.contextProjectId);
-  const { data: finding } = useFinding(session.contextFindingId ?? '');
-  const { data: assets } = useAssets(session.contextProjectId);
-
-  const project = projects?.find((p) => p.id === session.contextProjectId);
-  const engagement = engagements?.find((e) => e.id === session.contextEngagementId);
-  const approvedInScope = assets?.filter((a) => a.scope_status === 'in_scope' && a.approval_status === 'approved') ?? [];
-
-  const authorization = !engagement
-    ? { value: 'Authorization needed before testing', status: 'empty' as const }
-    : engagement.authorization_status === 'authorized'
-    ? { value: 'Engagement authorized', status: 'ok' as const }
-    : { value: `Not authorized (${humanize(engagement.authorization_status)})`, status: 'blocked' as const };
-
-  const scope = !session.contextProjectId
-    ? { value: 'Scope protection is active', status: 'ok' as const }
-    : approvedInScope.length > 0
-    ? { value: `${approvedInScope.length} approved in-scope asset${approvedInScope.length === 1 ? '' : 's'}`, status: 'ok' as const }
-    : { value: 'No approved in-scope assets in this project yet', status: 'blocked' as const };
-
-  const testingWindow = !engagement
-    ? { value: 'Testing window must be confirmed', status: 'empty' as const }
-    : engagement.testing_window_start && engagement.testing_window_end
-    ? { value: `${formatDate(engagement.testing_window_start)} – ${formatDate(engagement.testing_window_end)}`, status: 'ok' as const }
-    : { value: 'Testing window not set for this engagement', status: 'blocked' as const };
-
-  const items = [
-    { label: 'Project', value: project?.name ?? 'No project context selected', status: project ? 'ok' as const : 'empty' as const },
-    { label: 'Engagement', value: engagement?.name ?? 'Not selected', status: engagement ? 'ok' as const : 'empty' as const },
-    { label: 'Scan', value: 'Not selected', status: 'empty' as const },
-    { label: 'Finding', value: finding?.title ?? 'Not selected', status: finding ? 'ok' as const : 'empty' as const },
-    { label: 'Authorization', ...authorization },
-    { label: 'Scope', ...scope },
-    { label: 'Testing window', ...testingWindow },
-    { label: 'Model', value: health?.model ?? PRIMARY_MODEL, status: health?.available ? 'ok' as const : 'blocked' as const },
-    { label: 'Health', value: health?.available ? 'Connected' : 'Unavailable', status: health?.available ? 'ok' as const : 'blocked' as const },
-  ];
-
-  return (
-    <aside
-      className={`relative hidden shrink-0 flex-col border-l border-[var(--border)] bg-[var(--surface)] transition-all duration-200 lg:flex ${expanded ? 'w-[200px]' : 'w-[52px]'}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      <button
-        onClick={onToggle}
-        className="absolute left-0 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 grid h-6 w-6 place-items-center rounded-full border border-[var(--border)] bg-[var(--surface-2)] text-[var(--muted)] hover:text-[var(--text)]"
-        title={expanded ? 'Collapse panel' : 'Expand panel'}
-      >
-        {expanded ? <ChevronRight className="h-3.5 w-3.5" /> : <ChevronLeft className="h-3.5 w-3.5" />}
-      </button>
-      <div className="flex flex-1 flex-col items-center py-3">
-        {items.map((item) => (
-          <div key={item.label} className="group relative flex w-full items-center gap-2 px-2 py-2">
-            <span className={`h-2.5 w-2.5 rounded-full flex-shrink-0 ${item.status === 'ok' ? 'bg-[var(--success)]' : item.status === 'blocked' ? 'bg-[var(--danger)]' : 'bg-[var(--warn)]'}`} />
-            {expanded ? <span className="truncate text-[11px] text-[var(--muted)]">{item.label}</span> : null}
-            {!expanded ? (
-              <div className="absolute right-full top-1/2 mr-2 hidden -translate-y-1/2 rounded-md border border-[var(--border)] bg-[var(--surface-2)] px-2 py-1 text-[11px] text-[var(--text)] group-hover:block whitespace-nowrap z-50">
-                {item.label}: {item.value}
-              </div>
-            ) : null}
-          </div>
-        ))}
-      </div>
-      {expanded ? (
-        <div className="border-t border-[var(--border)] p-3">
-          <div className="space-y-2">
-            {items.map((item) => (
-              <div key={item.label} className="text-[11px]">
-                <p className="text-[var(--light)]">{item.label}</p>
-                <p className="truncate text-[var(--text)]">{item.value}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-    </aside>
-  );
-}
-
-function ChatComposer({ value, setValue, onSubmit, onStop, loading, disabled, authLoading }: { value: string; setValue: (v: string) => void; onSubmit: () => void; onStop: () => void; loading: boolean; disabled: boolean; authLoading: boolean }) {
-  function keyDown(e: KeyboardEvent<HTMLTextAreaElement>) { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit(); } }
-  return (
-    <form onSubmit={(e) => { e.preventDefault(); onSubmit(); }} className="bg-[var(--bg)] p-[18px]">
-      <div className="mx-auto max-w-[900px] overflow-hidden rounded-[14px] border border-[var(--border)] bg-[var(--surface)] shadow-[var(--shadow)]">
-        <div className="flex items-center gap-1 border-b border-[var(--border)] px-2.5 py-1.5">
-          <ComposerToolbarButton label="Attach" icon={Paperclip} onClick={() => undefined} disabled title="Coming soon — attach a file to this message." />
-          <ComposerToolbarButton label="Reference" icon={FileText} onClick={() => undefined} disabled title="Coming soon — reference a project, finding, or evidence item." />
-          <ComposerToolbarButton label="Clear" icon={Trash2} onClick={() => setValue('')} danger />
-        </div>
-        <div className="flex items-end gap-2 px-2.5 pb-2 pt-2">
-          <textarea value={value} maxLength={MAX_INPUT} onKeyDown={keyDown} onChange={(e) => setValue(e.target.value)} disabled={disabled} rows={1} placeholder={authLoading ? 'Loading session...' : 'Ask the local AI...'} className="min-h-[44px] flex-1 resize-none border-0 bg-transparent px-1 py-2 text-[13px] leading-5 text-[var(--text)] caret-[var(--accent)] outline-none placeholder:text-[var(--light)] disabled:cursor-not-allowed" onDrop={(e) => e.preventDefault()} onPaste={() => undefined} />
-          {loading ? (
-            <button type="button" onClick={onStop} className="grid h-8 w-8 place-items-center rounded-[10px] border border-[var(--border)] text-[var(--muted)] hover:bg-[var(--surface-2)]"><PauseCircle className="h-4 w-4" /></button>
-          ) : (
-            <button type="submit" aria-label="Send" disabled={disabled || !value.trim()} className="grid h-8 w-8 place-items-center rounded-[10px] bg-[var(--accent)] text-white disabled:opacity-50"><Send className="h-4 w-4" /></button>
-          )}
-        </div>
-        <div className="flex items-center justify-between px-3 py-1.5 text-[11px] text-[var(--light)]">
-          <span>{value.length.toLocaleString()} / {MAX_INPUT.toLocaleString()} · Shift+Enter newline</span>
         </div>
       </div>
-    </form>
-  );
-}
-
-function ComposerToolbarButton({ label, icon: Icon, onClick, danger, disabled, title }: { label: string; icon: typeof Paperclip; onClick: () => void; danger?: boolean; disabled?: boolean; title?: string }) {
-  return (
-    <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} title={title} className={`inline-flex items-center gap-1.5 rounded-lg px-2.5 py-1 text-[11px] font-medium transition ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:bg-[var(--surface-2)]'} ${danger ? 'ml-auto text-[var(--danger)] hover:bg-[var(--danger-bg)]' : 'text-[var(--muted)]'}`}>
-      <Icon className="h-3.5 w-3.5" />
-      {label}
-    </button>
-  );
-}
-
-function parseAssistantResponse(value: unknown): { content: AssistantContent; warning?: string } {
-  if (typeof value === 'string') {
-    const rawText = stripMarkdownFence(value.trim());
-    if (rawText.startsWith('{') || rawText.startsWith('[')) {
-      try {
-        value = JSON.parse(rawText);
-      } catch {
-        return { content: { type: 'plain', message: rawText || 'The model returned an empty response.', human_review_required: true } };
-      }
-    } else {
-      return { content: { type: 'plain', message: rawText || 'The model returned an empty response.', human_review_required: true } };
-    }
+    );
   }
-  const parsed = assistantContentSchema.safeParse(value);
-  if (!parsed.success) {
-    if (value && typeof value === 'object' && !Array.isArray(value)) {
-      const row = value as Record<string, unknown>;
-      const message = typeof row.message === 'string' ? row.message : typeof row.content === 'string' ? row.content : typeof row.text === 'string' ? row.text : '';
-      if (message) return { content: { type: 'plain', message, human_review_required: Boolean(row.human_review_required) }, warning: 'Structured response normalized to plain text.' };
-    }
-    return { content: { type: 'plain', message: typeof value === 'object' ? JSON.stringify(value) : String(value), human_review_required: true }, warning: 'Unexpected response shape. Displayed safely as text.' };
-  }
-  return { content: parsed.data };
-}
 
-function stripMarkdownFence(text: string): string {
-  const trimmed = text.trim();
-  if (trimmed.startsWith('```')) {
-    return trimmed.replace(/^```[a-zA-Z]*\n?/, '').replace(/```\s*$/, '').trim();
-  }
-  return trimmed;
-}
+  const c = typeof content === 'object' ? content as AssistantContent : null;
+  const text = c?.message ?? c?.summary ?? (typeof content === 'string' ? content : '');
+  function copyText() { navigator.clipboard.writeText(text ?? '').then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }); }
 
-function normalizeChatResponse(response: unknown) {
-  const row = response && typeof response === 'object' ? response as Record<string, unknown> : {};
-  const model = row.model && typeof row.model === 'object' ? row.model as Record<string, unknown> : null;
-  return {
-    messageId: String(row.message_id ?? `msg-${Date.now()}`),
-    mode: String(row.mode ?? 'general'),
-    content: row.content ?? row.text ?? { type: 'plain', message: 'The local model returned an empty response.', human_review_required: true },
-    model: String(model?.name ?? row.model ?? PRIMARY_MODEL),
-    createdAt: String(row.created_at ?? new Date().toISOString()),
-    raw: row.raw ?? response,
-  };
-}
-
-function buildAuthErrorMessage(): ChatMessage { return { id: `auth-${Date.now()}`, role: 'error', content: { type: 'error', message: 'Your secure session is not ready. Refresh the page or sign in again before sending a local AI request.', human_review_required: true }, createdAt: new Date().toISOString() }; }
-function buildErrorMessage(error: unknown): ChatMessage {
-  const message = getChatErrorText(error);
-  return { id: `err-${Date.now()}`, role: 'error', content: { type: 'error', message, human_review_required: true }, createdAt: new Date().toISOString() };
-}
-
-function getChatErrorText(error: unknown) {
-  if (error instanceof ApiError) {
-    if (error.status === 401 || error.status === 403) return 'Your secure session is no longer authorized. Sign in again and retry.';
-    if (error.status === 503) return error.detail || `The local ${PRIMARY_MODEL} model is unavailable.`;
-    return error.detail.toLowerCase().includes('timeout') ? 'Request timeout while waiting for the local model. Reduce context size or retry.' : error.detail;
-  }
-  if (error instanceof TypeError) return 'Cannot reach the NoovaStack AI API. Check that the backend service is running and reachable.';
-  return error instanceof Error && error.message ? error.message : 'The local AI request failed unexpectedly.';
-}
-
-function getChatErrorKind(error: unknown) {
-  if (error instanceof ApiError) {
-    if (error.status === 401 || error.status === 403) return 'authorization';
-    if (error.status === 503) return 'provider_unavailable';
-    if (error.status === 502 || error.status === 504 || error.detail.toLowerCase().includes('timeout')) return 'provider_error';
-    return 'request_error';
-  }
-  return error instanceof TypeError ? 'network_error' : 'response_error';
-}
-
-function ErrorMessageCard({ content, onRetry }: { content: AssistantContent; onRetry: () => void }) {
-  const title = {
-    authorization: 'Authorization required',
-    provider_unavailable: 'Local AI unavailable',
-    provider_error: 'Local AI provider error',
-    network_error: 'AI API unreachable',
-    request_error: 'AI request failed',
-    response_error: 'Unable to process response',
-  }[content.status ?? ''] ?? 'AI request failed';
-  return (
-    <div className="rounded-xl border border-[var(--danger)]/30 bg-[var(--danger-bg)] p-3 text-sm">
-      <div className="flex items-center gap-2">
-        <AlertTriangle className="h-4 w-4 text-[var(--danger)] flex-shrink-0" />
-        <strong className="text-[var(--danger)]">{title}</strong>
-      </div>
-      <p className="mt-1.5 text-[var(--text)]">{content.message ?? 'The model returned a response that could not be parsed.'}</p>
-      <button onClick={onRetry} className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--danger)]/30 bg-[var(--surface)] px-3 py-1.5 text-xs font-semibold text-[var(--text)] hover:bg-[var(--surface-2)]">
-        <RefreshCw className="h-3.5 w-3.5" />Retry
-      </button>
-    </div>
-  );
-}
-
-function GenericStructuredCard({ content, onToggleRaw }: { content: AssistantContent; onToggleRaw: () => void }) {
-  const title = (content as Record<string, unknown>).title ?? (content as Record<string, unknown>).name ?? 'Response';
-  const message = content.message ?? content.summary ?? String((content as Record<string, unknown>).body ?? '');
-  const fields = Object.entries(content as Record<string, unknown>).filter(([k]) => !['type', 'message', 'summary', 'title', 'name', 'body', 'warnings', 'human_review_required'].includes(k));
-  return (
-    <CompactStructuredCard title={String(title)} icon={Info} status="success" onToggleRaw={onToggleRaw}>
-      <MarkdownLite text={String(message)} />
-      {fields.length > 0 ? <InfoGrid rows={fields.map(([k, v]) => [k, String(v ?? '')])} /> : null}
-    </CompactStructuredCard>
-  );
-}
-
-function ErrorMessage({ message }: { message: ChatMessage }) {
-  const content = message.content as AssistantContent;
-  return (
-    <div className="rounded-2xl border border-[var(--danger)]/30 bg-[var(--danger-bg)] p-4 text-sm text-[var(--danger)]">
-      <strong>Chat error</strong>
-      <p className="mt-1">{content.message}</p>
-      <button className="mt-3 inline-flex items-center gap-2 rounded-lg border border-[var(--danger)]/30 bg-[var(--surface)] px-3 py-1 text-xs font-semibold">
-        <RefreshCw className="h-3 w-3" />Retry last message
-      </button>
-    </div>
-  );
-}
-
-function StreamingIndicator({ mode }: { mode: string }) {
   return (
     <div className="flex items-start gap-3">
-      <div className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[var(--surface-2)] text-[var(--accent)] shadow-[var(--shadow)]">
-        <Bot className="h-4 w-4" />
-      </div>
-      <div className="flex flex-col gap-2 pt-1">
-        <div className="flex items-center gap-1.5">
-          <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--accent)]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--accent)] [animation-delay:120ms]" />
-          <span className="h-2 w-2 animate-bounce rounded-full bg-[var(--accent)] [animation-delay:240ms]" />
+      <AvatarBot />
+      <div className="group min-w-0 max-w-[80%]">
+        <div className="rounded-2xl rounded-tl-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3 shadow-sm">
+          {/* Mode badge */}
+          <div className="mb-2 flex items-center gap-1.5">
+            <span className="text-[11px]">{mode.emoji}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{mode.label}</span>
+            {c?.human_review_required && (
+              <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-semibold text-amber-600">
+                <AlertTriangle className="h-2.5 w-2.5" /> Needs review
+              </span>
+            )}
+          </div>
+
+          {/* Main text */}
+          {text && <div className="text-[13.5px] leading-relaxed text-gray-900 dark:text-gray-100"><MarkdownLite text={text} /></div>}
+
+          {/* Remediation card */}
+          {c?.remediation && <RemediationCard r={c.remediation} />}
+
+          {/* Missing info */}
+          {c?.missing_information?.length ? (
+            <div className="mt-3 rounded-xl bg-amber-500/10 border border-amber-400/20 px-3 py-2">
+              <p className="mb-1 text-[11px] font-semibold text-amber-600">Missing information</p>
+              <ul className="space-y-0.5">{c.missing_information.map((item, i) => <li key={i} className="flex items-start gap-1.5 text-[12px] text-gray-900 dark:text-gray-100"><span className="mt-1 h-1.5 w-1.5 rounded-full bg-amber-500 shrink-0" />{item}</li>)}</ul>
+            </div>
+          ) : null}
+
+          {/* Warnings */}
+          {c?.warnings?.length ? (
+            <div className="mt-3 rounded-xl bg-red-500/10 border border-red-400/20 px-3 py-2">
+              <p className="mb-1 text-[11px] font-semibold text-red-500">Warnings</p>
+              <ul className="space-y-0.5">{c.warnings.map((w, i) => <li key={i} className="text-[12px] text-gray-900 dark:text-gray-100">⚠ {w}</li>)}</ul>
+            </div>
+          ) : null}
         </div>
-        <p className="text-[11px] text-[var(--muted)]">Thinking...<span className="text-[var(--light)]"> · {mode}</span></p>
+
+        {/* Footer */}
+        <div className="mt-1 flex items-center gap-2 px-1">
+          <span className="text-[10px] text-gray-500 dark:text-gray-400">{formatTime(message.createdAt)}</span>
+          {message.model && <span className="text-[10px] text-gray-500 dark:text-gray-400">· {message.model}</span>}
+          <button onClick={copyText} className="ml-auto hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100">
+            {copied ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
+          </button>
+          <button onClick={onRetry} className="hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100">
+            <RefreshCw className="h-3 w-3" />
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function InfoGrid({ rows }: { rows: Array<[string, string | undefined]> }) {
-  return <div className="grid gap-2 sm:grid-cols-2">{rows.filter(([, v]) => v).map(([k, v]) => <div key={k} className="rounded-lg bg-[var(--bg)] p-2 text-xs"><p className="text-[10px] text-[var(--muted)]">{k}</p><p className="font-medium text-[var(--text)]">{v}</p></div>)}</div>;
-}
-
-function List({ title, items }: { title: string; items?: string[] }) {
-  return items?.length ? <div><p className="text-xs font-semibold text-[var(--muted)]">{title}</p><ul className="mt-1 list-disc space-y-1 pl-4 text-xs text-[var(--text)]">{items.map((item) => <li key={item}><MarkdownItem text={item} /></li>)}</ul></div> : null;
-}
-
-function CardActions({ actions }: { actions: string[] }) {
-  return <div className="flex flex-wrap gap-2">{actions.map((action) => <MiniButton key={action} label={action} />)}</div>;
-}
-
-function InfoBlock({ label, value }: { label: string; value?: string }) {
-  return value ? <div className="rounded-lg bg-[var(--bg)] p-2 text-xs"><p className="mb-0.5 text-[10px] font-semibold text-[var(--muted)]">{label}</p><MarkdownLite text={value} /></div> : null;
-}
-
-function HeaderButton({ label, onClick, icon: Icon, disabled, title }: { label: string; onClick: () => void; icon?: typeof Wrench; disabled?: boolean; title?: string }) {
+function RemediationCard({ r }: { r: NonNullable<AssistantContent['remediation']> }) {
   return (
-    <button onClick={disabled ? undefined : onClick} disabled={disabled} title={title} className={`inline-flex items-center gap-1.5 rounded-xl border border-[var(--border)] bg-[var(--surface)] px-3 py-1.5 text-[12px] font-semibold text-[var(--text)] ${disabled ? 'cursor-not-allowed opacity-50' : 'hover:border-[var(--accent)]/40 hover:text-[var(--accent)]'}`}>
-      {Icon ? <Icon className="h-4 w-4" /> : null}{label}
-    </button>
+    <div className="mt-3 space-y-2">
+      {r.issue_summary && <p className="text-[12.5px] text-gray-900 dark:text-gray-100 italic border-l-2 border-violet-400 pl-3">{r.issue_summary}</p>}
+      {r.immediate_mitigation?.length ? <RemedSection label="⚡ Immediate mitigation" items={r.immediate_mitigation} color="emerald" /> : null}
+      {r.long_term_remediation?.length ? <RemedSection label="🔧 Long-term fix" items={r.long_term_remediation} color="blue" /> : null}
+      {r.verification_steps?.length ? <RemedSection label="✅ Verification" items={r.verification_steps} color="violet" /> : null}
+      {r.references?.length ? (
+        <div className="rounded-xl bg-gray-50 dark:bg-gray-950 border border-gray-200 dark:border-gray-700 px-3 py-2">
+          <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">References</p>
+          <ul className="space-y-0.5">{r.references.map((ref, i) => <li key={i} className="text-[11.5px] text-gray-900 dark:text-gray-100 break-all">{ref}</li>)}</ul>
+        </div>
+      ) : null}
+    </div>
   );
 }
 
-function MiniButton({ label, onClick, icon: Icon }: { label: string; onClick?: () => void; icon?: typeof Bot }) {
+function RemedSection({ label, items, color }: { label: string; items: string[]; color: string }) {
+  const colors: Record<string, string> = { emerald: 'bg-emerald-500/10 border-emerald-400/20 text-emerald-700', blue: 'bg-blue-500/10 border-blue-400/20 text-blue-700', violet: 'bg-violet-500/10 border-violet-400/20 text-violet-700' };
   return (
-    <button type="button" onClick={onClick} className="inline-flex items-center gap-1 rounded-lg border border-[var(--border)] bg-[var(--surface)] px-2 py-1 text-xs font-semibold text-[var(--muted)] hover:border-[var(--accent)]/40 hover:bg-[var(--accent-soft)] hover:text-[var(--accent)]">
-      {Icon ? <Icon className="h-3 w-3" /> : null}{label}
-    </button>
+    <div className={`rounded-xl border px-3 py-2 ${colors[color] ?? colors.violet}`}>
+      <p className="mb-1 text-[10px] font-bold uppercase tracking-wider">{label}</p>
+      <ul className="space-y-0.5">{items.map((item, i) => <li key={i} className="text-[12px] text-gray-900 dark:text-gray-100">{item}</li>)}</ul>
+    </div>
   );
 }
 
-function SmallAction({ label, icon: Icon, onClick, danger }: { label: string; icon: typeof Bot; onClick: () => void; danger?: boolean }) {
-  return <button type="button" title={label} onClick={onClick} className={`rounded-md p-1 ${danger ? 'text-[var(--danger)]' : 'text-[var(--muted)]'} hover:bg-[var(--surface)]`}><Icon className="h-3.5 w-3.5" /></button>;
+function ErrorBubble({ message, onRetry }: { message: ChatMessage; onRetry: () => void }) {
+  return (
+    <div className="flex items-center justify-center">
+      <div className="flex items-center gap-2 rounded-2xl border border-red-300/30 bg-red-500/10 px-4 py-2 text-[12.5px] text-red-500">
+        <AlertTriangle className="h-4 w-4 shrink-0" />
+        <span>{typeof message.content === 'string' ? message.content : 'An error occurred.'}</span>
+        <button onClick={onRetry} className="ml-2 underline text-[11px]">Retry</button>
+      </div>
+    </div>
+  );
 }
 
-function SkeletonList() {
-  return <div className="space-y-2 px-3">{[1, 2, 3].map((i) => <div key={i} className="h-14 animate-pulse rounded-xl bg-[var(--surface-2)]" />)}</div>;
-}
+// ── Composer ──────────────────────────────────────────────────────────────────
+function Composer({ value, setValue, onSubmit, onStop, loading, disabled, authLoading, mode }: { value: string; setValue: (v: string) => void; onSubmit: (e?: FormEvent) => void; onStop: () => void; loading: boolean; disabled: boolean; authLoading: boolean; mode: typeof modes[0] }) {
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const suggestions = MODE_SUGGESTIONS[mode.id] ?? MODE_SUGGESTIONS.general;
 
-function StatusText({ status }: { status: string }) {
-  const color = status === 'Healthy' || status === 'Completed' || status === 'Connected' ? 'text-[var(--success)]' : status === 'Blocked' || status === 'Failed' || status === 'Unavailable' ? 'text-[var(--danger)]' : 'text-[var(--warn)]';
-  return <span className={`text-xs font-semibold ${color}`}>{status}</span>;
-}
+  useEffect(() => {
+    const el = textareaRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = Math.min(el.scrollHeight, 180) + 'px';
+  }, [value]);
 
-function createChatSession(): ChatSession { return { id: `chat-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, title: 'New assessment chat', mode: 'general', messages: [welcomeMessage], updatedAt: new Date().toISOString() }; }
-function getUserHistoryKey(user: User | null) { return `${HISTORY_KEY_PREFIX}.${user?.id ?? user?.email ?? 'anonymous'}`; }
-function displayName(user: User | null) { return user?.full_name || user?.username || user?.email || 'Signed-in user'; }
-function getInitials(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  if (!parts.length) return '?';
-  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
-  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
-}
-function loadChatHistory(key: string): ChatSession[] { if (typeof window === 'undefined') return []; try { const raw = sessionStorage.getItem(key) || localStorage.getItem(key); const rows = raw ? JSON.parse(raw) as ChatSession[] : []; return sortSessions(Array.isArray(rows) ? rows.filter((row) => row.id && row.messages?.length) : []); } catch { return []; } }
-function saveChatHistory(key: string, sessions: ChatSession[]) { if (typeof window === 'undefined') return; const value = JSON.stringify(sessions); sessionStorage.setItem(key, value); localStorage.setItem(key, value); }
-function useDeviceClass() { const [device, setDevice] = useState('desktop'); useEffect(() => { const update = () => setDevice(window.innerWidth < 640 ? 'phone' : window.innerWidth < 1024 ? 'tablet' : 'desktop'); update(); window.addEventListener('resize', update); return () => window.removeEventListener('resize', update); }, []); return device; }
-function sortSessions(rows: ChatSession[]) { return [...rows].sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()); }
-function groupSessions(rows: ChatSession[]) { const result: Record<string, ChatSession[]> = { Today: [], Yesterday: [], Earlier: [] }; const now = new Date(); rows.forEach((row) => { const d = new Date(row.updatedAt); const diff = Math.floor((startOfDay(now).getTime() - startOfDay(d).getTime()) / 86400000); result[diff === 0 ? 'Today' : diff === 1 ? 'Yesterday' : 'Earlier'].push(row); }); return result; }
-function startOfDay(date: Date) { return new Date(date.getFullYear(), date.getMonth(), date.getDate()); }
-function makeTitle(value: string) { return value.length > 36 ? `${value.slice(0, 36)}...` : value; }
-function labelForMode(value: string) { return modes.find((item) => item.id === value)?.label ?? value; }
-function formatTime(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? 'now' : date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }); }
-function formatDate(value: string) { const date = new Date(value); return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }); }
-function humanize(value: string) { return value.replace(/_/g, ' ').replace(/\b\w/g, (m) => m.toUpperCase()); }
-function sanitizeParams(params: Record<string, unknown>) { const blocked = /password|token|cookie|secret|authorization/i; return Object.fromEntries(Object.entries(params).map(([key, value]) => [key, blocked.test(key) ? '[redacted]' : value])); }
+  function handleKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit(); }
+  }
 
-function groupMessages(messages: ChatMessage[]) {
-  const groups: { id: string; role: 'user' | 'assistant' | 'error'; messages: ChatMessage[] }[] = [];
-  messages.forEach((message) => {
-    const last = groups[groups.length - 1];
-    if (last && last.role === message.role && message.role === 'user') {
-      last.messages.push(message);
-    } else {
-      groups.push({ id: `group-${message.id}`, role: message.role, messages: [message] });
-    }
-  });
-  return groups;
+  return (
+    <div className="shrink-0 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900/80 backdrop-blur-sm px-4 py-3">
+      {/* Quick suggestions */}
+      {!value && !loading && (
+        <div className="mb-3 flex gap-2 overflow-x-auto [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden">
+          {suggestions.map(s => (
+            <button key={s.label} onClick={() => setValue(s.prompt)}
+              className="shrink-0 flex items-center gap-1.5 rounded-full border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 px-3 py-1 text-[11.5px] text-gray-500 dark:text-gray-400 hover:border-violet-400/40 hover:text-violet-600 transition-colors">
+              <s.icon className="h-3 w-3" />{s.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <form onSubmit={onSubmit} className="flex items-end gap-3">
+        <div className="flex-1 rounded-2xl border border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-950 px-4 py-3 transition-all focus-within:border-violet-400 focus-within:ring-2 focus-within:ring-violet-400/20">
+          <textarea
+            ref={textareaRef}
+            value={value}
+            onChange={e => setValue(e.target.value)}
+            onKeyDown={handleKey}
+            rows={1}
+            maxLength={MAX_INPUT}
+            disabled={disabled || authLoading}
+            placeholder={disabled ? (authLoading ? 'Authenticating…' : 'Please log in to chat') : `Ask the AI assistant… (${mode.emoji} ${mode.label})`}
+            className="w-full resize-none bg-transparent text-[13.5px] text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:text-gray-500 outline-none disabled:opacity-50"
+          />
+          <div className="mt-1 flex items-center justify-between">
+            <span className="text-[10px] text-gray-400 dark:text-gray-500">{value.length}/{MAX_INPUT} · Shift+Enter for new line</span>
+          </div>
+        </div>
+
+        {loading ? (
+          <button type="button" onClick={onStop} className="shrink-0 flex h-11 w-11 items-center justify-center rounded-2xl bg-red-500 text-white hover:bg-red-600 transition-colors shadow-sm">
+            <Square className="h-4 w-4 fill-white" />
+          </button>
+        ) : (
+          <button type="submit" disabled={!value.trim() || disabled} className="shrink-0 flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
+            <Send className="h-4 w-4" />
+          </button>
+        )}
+      </form>
+    </div>
+  );
 }

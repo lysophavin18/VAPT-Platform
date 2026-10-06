@@ -18,12 +18,13 @@ export function useScanActions() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: ({ id, action }: { id: string; action: 'start' | 'launch' | 'pause' | 'resume' | 'cancel' | 'kill' }) => {
+    mutationFn: ({ id, action }: { id: string; action: 'start' | 'launch' | 'pause' | 'resume' | 'cancel' | 'kill' | 'request-approval' }) => {
       if (action === 'start') return api.startScan(id, token);
       if (action === 'launch') return api.launchScan(id, token);
       if (action === 'pause') return api.pauseScan(id, token);
       if (action === 'resume') return api.resumeScan(id, token);
       if (action === 'kill') return api.killScan(id, token);
+      if (action === 'request-approval') return api.requestScanApproval(id, token);
       return api.cancelScan(id, token);
     },
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['scans'] }),

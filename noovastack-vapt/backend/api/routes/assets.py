@@ -66,6 +66,22 @@ async def list_assets(
     return result.scalars().all()
 
 
+@router.get("/assets", response_model=list[AssetResponse])
+async def list_all_assets(
+    approval_status: str | None = None,
+    scope_status: str | None = None,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_manager),
+):
+    query = select(Asset)
+    if approval_status:
+        query = query.where(Asset.approval_status == approval_status)
+    if scope_status:
+        query = query.where(Asset.scope_status == scope_status)
+    result = await db.execute(query.order_by(Asset.created_at.desc()))
+    return result.scalars().all()
+
+
 @router.get("/assets/{asset_id}", response_model=AssetResponse)
 async def get_asset(
     asset_id: str,
@@ -170,7 +186,7 @@ async def get_discovery_job_status(
 
     try:
         from celery.result import AsyncResult
-        from workers.celery_app import celery_app
+        from workers.celery_app import app as celery_app
         result = AsyncResult(job_id, app=celery_app)
         state = result.state  # PENDING, STARTED, SUCCESS, FAILURE, RETRY
 
@@ -260,8 +276,25 @@ async def get_asset_graph(
         select(Asset).where(Asset.project_id == project_id)
     )
     assets = result.scalars().all()
+
     nodes = []
     edges = []
+    edge_set: set[tuple[str, str]] = set()
+
+    def add_edge(src: str, tgt: str):
+        key = (src, tgt)
+        if key not in edge_set:
+            edge_set.add(key)
+            edges.append({"source": src, "target": tgt})
+
+    # Build lookup maps
+    id_map = {str(a.id): a for a in assets}
+    value_map: dict[str, str] = {}  # value → id (prefer domain > subdomain for duplicates)
+    for a in assets:
+        v = (a.value or "").strip().lower()
+        if v and (v not in value_map or a.asset_type == "domain"):
+            value_map[v] = str(a.id)
+
     for a in assets:
         nodes.append({
             "id": str(a.id),
@@ -269,9 +302,36 @@ async def get_asset_graph(
             "type": a.asset_type,
             "scope_status": a.scope_status,
         })
-        if a.parent_asset_id:
-            edges.append({
-                "source": str(a.parent_asset_id),
-                "target": str(a.id),
-            })
+
+        # 1. Explicit parent link
+        if a.parent_asset_id and str(a.parent_asset_id) in id_map:
+            add_edge(str(a.parent_asset_id), str(a.id))
+
+        v = (a.value or "").strip().lower()
+
+        # 2. Subdomain → parent domain (inferred from suffix)
+        if a.asset_type in ("subdomain", "url"):
+            for domain_val, domain_id in value_map.items():
+                if domain_id != str(a.id) and (
+                    v.endswith(f".{domain_val}") or
+                    v.lstrip("https://").lstrip("http://").split("/")[0].endswith(f".{domain_val}")
+                ):
+                    add_edge(domain_id, str(a.id))
+                    break
+
+        # 3. Service (host:port) → its host asset
+        if a.asset_type == "service" and ":" in v:
+            host = v.rsplit(":", 1)[0]
+            host_id = value_map.get(host)
+            if host_id and host_id != str(a.id):
+                add_edge(host_id, str(a.id))
+
+        # 4. IP → domain/subdomain inferred from technology.resolved_from
+        if a.asset_type == "ip_address" and isinstance(a.technology, dict):
+            resolved_from = (a.technology.get("resolved_from") or "").strip().lower()
+            if resolved_from:
+                parent_id = value_map.get(resolved_from)
+                if parent_id and parent_id != str(a.id):
+                    add_edge(parent_id, str(a.id))
+
     return {"nodes": nodes, "edges": edges}

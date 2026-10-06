@@ -23,7 +23,6 @@ const profileMenuItems = [
   { label: 'Multi-Factor Authentication', href: '/settings/mfa' },
   { label: 'Notification Preferences', href: '/settings/notifications' },
   { label: 'Session Management', href: '/settings/sessions' },
-  { label: 'API Tokens', href: '/settings/api-tokens' },
   { label: 'Appearance', href: '/settings/appearance' },
   { label: 'Help and Support', href: '/help' },
 ];
@@ -337,10 +336,17 @@ function getAvatarUrl(user: unknown) {
   return candidate.avatar_url ?? candidate.avatarUrl ?? candidate.profile_image_url ?? candidate.profileImageUrl ?? candidate.image ?? null;
 }
 
+const ROLE_LABELS: Record<string, string> = {
+  admin:         'System Administrator',
+  manager:       'Manager',
+  security_team: 'Security Team',
+  analyst:       'Analyst',
+  viewer:        'Viewer',
+};
+
 function formatRole(role?: string) {
   if (!role) return 'User';
-  if (role === 'admin' || role === 'platform_admin') return 'System Administrator';
-  return titleCase(role);
+  return ROLE_LABELS[role] ?? titleCase(role);
 }
 
 function buildSearchResults(data: { projects: Project[]; scans: Scan[]; findings: Finding[]; assets: Asset[]; role?: string }): SearchResult[] {

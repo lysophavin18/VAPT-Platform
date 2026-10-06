@@ -53,9 +53,9 @@ services:
       - CELERY_BROKER_URL=redis://:noovastack_redis_2024!@redis:6379/1
       - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@redis:6379/2
       - AI_PROVIDER=${AI_PROVIDER:-deepseek}
-      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com}
+      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com/v1}
       - AI_API_KEY=${AI_API_KEY:-}
-      - AI_MODEL=${AI_MODEL:-deepseek-v4-flash}
+      - AI_MODEL=${AI_MODEL:-deepseek-chat}
       - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-240}
       - AI_MAX_OUTPUT_TOKENS=${AI_MAX_OUTPUT_TOKENS:-4096}
       - AI_TEMPERATURE=${AI_TEMPERATURE:-0.2}
@@ -87,9 +87,9 @@ services:
       - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@127.0.0.1:6381/2
       - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY to a secure random value of at least 32 characters}
       - AI_PROVIDER=${AI_PROVIDER:-deepseek}
-      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com}
+      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com/v1}
       - AI_API_KEY=${AI_API_KEY:-}
-      - AI_MODEL=${AI_MODEL:-deepseek-v4-flash}
+      - AI_MODEL=${AI_MODEL:-deepseek-chat}
       - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-240}
       - AI_MAX_OUTPUT_TOKENS=${AI_MAX_OUTPUT_TOKENS:-4096}
       - AI_TEMPERATURE=${AI_TEMPERATURE:-0.2}

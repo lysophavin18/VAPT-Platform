@@ -3,8 +3,9 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useEffect, useState } from 'react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
-import { Edit3, FileText, Network, Plus, Save, X } from 'lucide-react';
+import { CheckCircle, Edit3, FileText, Network, Plus, Save, X, XCircle } from 'lucide-react';
 import { LoadingSkeleton } from '@/components/feedback/loading-skeleton';
 import { PageHeader } from '@/components/layout/page-header';
 import { DataTable } from '@/components/tables/data-table';
@@ -16,6 +17,8 @@ import { ConfirmationDialog } from '@/components/feedback/confirmation-dialog';
 import { useAssets } from '@/hooks/use-assets';
 import { useDeleteProject, useProject, useUpdateProject } from '@/hooks/use-projects';
 import { useScans } from '@/hooks/use-scans';
+import { api } from '@/lib/api-client';
+import { useAuth } from '@/hooks/use-auth';
 import { formatDate, titleCase } from '@/lib/utils';
 import type { Asset, Scan } from '@/types';
 
@@ -23,11 +26,26 @@ export default function ProjectDetailPage() {
   const params = useParams<{ projectId: string }>();
   const projectId = params.projectId;
   const router = useRouter();
+  const { token, user } = useAuth();
+  const queryClient = useQueryClient();
   const project = useProject(projectId);
   const updateProject = useUpdateProject(projectId);
   const deleteProject = useDeleteProject();
   const assets = useAssets(projectId);
   const scans = useScans(`?project_id=${projectId}`);
+  const isManager = user?.role && ['admin', 'manager', 'security_team'].includes(user.role);
+
+  const approveAsset = useMutation({
+    mutationFn: (assetId: string) => api.approveAsset(assetId, token),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['assets', projectId] }); toast.success('Asset approved'); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed'),
+  });
+
+  const rejectAsset = useMutation({
+    mutationFn: (assetId: string) => api.rejectAsset(assetId, token),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['assets', projectId] }); toast.success('Asset rejected'); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : 'Failed'),
+  });
   const completedScans = (scans.data ?? []).filter((scan) => scan.status === 'completed');
   const [editing, setEditing] = useState(false);
   const [form, setForm] = useState({ name: '', description: '', environment: 'testing', status: 'active' });
@@ -132,6 +150,16 @@ export default function ProjectDetailPage() {
                 { key: 'type', header: 'Type', render: (asset) => asset.asset_type },
                 { key: 'scope', header: 'Scope', render: (asset) => <StatusBadge value={asset.scope_status} /> },
                 { key: 'review', header: 'Review Status', render: (asset) => <StatusBadge value={asset.approval_status} /> },
+                ...(isManager ? [{
+                  key: 'actions' as keyof Asset,
+                  header: 'Actions',
+                  render: (asset: Asset) => asset.approval_status === 'pending' ? (
+                    <div className="flex gap-1.5">
+                      <button type="button" disabled={approveAsset.isPending || rejectAsset.isPending} onClick={() => approveAsset.mutate(asset.id)} className="flex items-center gap-1 rounded bg-green-600 px-2 py-1 text-xs font-semibold text-white hover:bg-green-700 disabled:opacity-50"><CheckCircle className="h-3 w-3" /> Approve</button>
+                      <button type="button" disabled={approveAsset.isPending || rejectAsset.isPending} onClick={() => rejectAsset.mutate(asset.id)} className="flex items-center gap-1 rounded bg-red-600 px-2 py-1 text-xs font-semibold text-white hover:bg-red-700 disabled:opacity-50"><XCircle className="h-3 w-3" /> Reject</button>
+                    </div>
+                  ) : null,
+                }] : []),
               ]}
             />
           </CardContent>

@@ -17,7 +17,6 @@ RUN apk add --no-cache ca-certificates curl unzip \
 
 FROM golang:alpine AS pdtools
 
-# ProjectDiscovery tools and ffuf, built from source with go install (arch-native).
 ENV GOBIN=/out CGO_ENABLED=0
 RUN apk add --no-cache ca-certificates git \
     && go install github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest \
@@ -25,29 +24,51 @@ RUN apk add --no-cache ca-certificates git \
     && go install github.com/projectdiscovery/httpx/cmd/httpx@latest \
     && go install github.com/projectdiscovery/dnsx/cmd/dnsx@latest \
     && go install github.com/projectdiscovery/katana/cmd/katana@latest \
-    && go install github.com/ffuf/ffuf/v2@latest
+    && go install github.com/ffuf/ffuf/v2@latest \
+    && go install github.com/OJ/gobuster/v3@latest \
+    && go install github.com/hahwul/dalfox/v2@latest
 
-# naabu's SYN-scan engine needs cgo + libpcap, which makes a CGO_ENABLED=0 build produce a
-# binary dynamically linked against musl's loader (/lib/ld-musl-x86_64.so.1) — that doesn't
-# exist on the glibc-based runtime image below, so the binary fails to exec there at all.
-# Statically link it instead so it's runtime-independent like the other tools above.
 RUN apk add --no-cache libpcap-dev build-base \
     && CGO_ENABLED=1 go install -ldflags '-extldflags "-static"' github.com/projectdiscovery/naabu/v2/cmd/naabu@latest
+
+FROM alpine:3.22 AS trivy-dl
+RUN apk add --no-cache curl tar \
+    && TRIVY_VERSION=$(curl -s https://api.github.com/repos/aquasecurity/trivy/releases/latest | grep '"tag_name"' | head -1 | sed 's/.*"v\([^"]*\)".*/\1/') \
+    && echo "trivy version: $TRIVY_VERSION" \
+    && curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
+       | tar -xz -C /usr/local/bin trivy \
+    && chmod +x /usr/local/bin/trivy
+
+FROM alpine:3.22 AS grype-dl
+RUN apk add --no-cache curl bash \
+    && curl -sSfL https://raw.githubusercontent.com/anchore/grype/main/install.sh | sh -s -- -b /usr/local/bin \
+    && chmod +x /usr/local/bin/grype
 
 FROM python:3.12-slim
 
 WORKDIR /app
 
-COPY --from=depx /usr/local/bin/depx /usr/local/bin/depx
-COPY --from=pdtools /out/nuclei /out/subfinder /out/dnsx /out/katana /out/naabu /out/ffuf /usr/local/bin/
-# The Go httpx binary is renamed to avoid clobbering pip's httpx CLI script.
+COPY --from=depx    /usr/local/bin/depx                                                    /usr/local/bin/depx
+COPY --from=pdtools /out/nuclei /out/subfinder /out/dnsx /out/katana /out/naabu            /usr/local/bin/
+COPY --from=pdtools /out/ffuf /out/gobuster /out/dalfox                                    /usr/local/bin/
 COPY --from=pdtools /out/httpx /usr/local/bin/httpx-pd
+COPY --from=trivy-dl /usr/local/bin/trivy                                                  /usr/local/bin/trivy
+COPY --from=grype-dl /usr/local/bin/grype                                                  /usr/local/bin/grype
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential libpq-dev ca-certificates curl git nmap sqlmap sslscan whatweb \
+    build-essential libpq-dev ca-certificates curl git \
+    nmap sqlmap sslscan whatweb perl openssl dnsutils \
     libcairo2 libpango-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf-2.0-0 \
     libffi-dev shared-mime-info fonts-dejavu-core \
     && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 https://github.com/sullo/nikto.git /opt/nikto \
+    && chmod +x /opt/nikto/program/nikto.pl \
+    && ln -s /opt/nikto/program/nikto.pl /usr/local/bin/nikto
+
+RUN git clone --depth 1 https://github.com/testssl/testssl.sh.git /opt/testssl.sh \
+    && ln -s /opt/testssl.sh/testssl.sh /usr/local/bin/testssl.sh \
+    && ln -s /opt/testssl.sh/testssl.sh /usr/local/bin/testssl
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
@@ -58,14 +79,10 @@ RUN python -m venv /opt/wapiti \
 
 RUN python -m venv /opt/security-tools \
     && /opt/security-tools/bin/pip install --no-cache-dir bandit pip-audit semgrep \
-    && ln -s /opt/security-tools/bin/bandit /usr/local/bin/bandit \
+    && ln -s /opt/security-tools/bin/bandit  /usr/local/bin/bandit \
     && ln -s /opt/security-tools/bin/pip-audit /usr/local/bin/pip-audit \
     && ln -s /opt/security-tools/bin/semgrep /usr/local/bin/semgrep
 
-RUN git clone --depth 1 https://github.com/testssl/testssl.sh.git /opt/testssl.sh \
-    && ln -s /opt/testssl.sh/testssl.sh /usr/local/bin/testssl.sh
-
-# Pre-download nuclei templates (best-effort) so scans work offline at runtime.
 RUN nuclei -update-templates -silent || true
 
 RUN mkdir -p /app/results

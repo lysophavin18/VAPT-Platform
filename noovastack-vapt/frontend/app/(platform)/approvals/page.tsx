@@ -67,20 +67,25 @@ export default function ApprovalsPage() {
       </div>
       <div className="mt-5 space-y-3">
         {items.map((approval) => (
-          <div key={approval.id} className="rounded-2xl border border-slate-200 p-4">
+          <div key={approval.id} className={`rounded-2xl border p-4 ${approval.status === 'pending' ? 'border-amber-300 bg-amber-50/40' : 'border-slate-200'}`}>
             <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
+              <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-semibold text-[#0B1F3A]">{titleCase(approval.action)}</p>
                   <StatusBadge value={approval.risk_level} />
                   <StatusBadge value={approval.status} />
                 </div>
                 <p className="mt-1 text-sm text-slate-600">{approval.reason ?? 'No reason provided.'}</p>
-                <p className="mt-2 text-xs text-slate-500">
-                  Requested {formatDate(approval.created_at)}
-                  {approval.scan_id ? <> &middot; <Link href={`/scans/${approval.scan_id}`} className="font-semibold text-[#2563EB]">View scan</Link></> : null}
-                  {approval.schedule_id ? <> &middot; <Link href="/schedules" className="font-semibold text-[#2563EB]">View schedule</Link></> : null}
-                </p>
+                <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500">
+                  <span>Requested {formatDate(approval.created_at)}</span>
+                  <span>By: <span className="font-mono text-slate-700">{approval.requested_by?.slice(0, 8)}…</span></span>
+                  {approval.expires_at ? <span>Expires: {formatDate(approval.expires_at)}</span> : null}
+                  {approval.scan_id ? <Link href={`/scans/${approval.scan_id}`} className="font-semibold text-[#2563EB]">View scan →</Link> : null}
+                  {approval.schedule_id ? <Link href="/schedules" className="font-semibold text-[#2563EB]">View schedule →</Link> : null}
+                </div>
+                {approval.status !== 'pending' && approval.decided_at ? (
+                  <p className="mt-1 text-xs text-slate-400">Decided {formatDate(approval.decided_at)}{approval.approved_by ? ` · by ${approval.approved_by.slice(0, 8)}…` : ''}</p>
+                ) : null}
               </div>
               {approval.status === 'pending' ? (
                 <div className="flex flex-wrap gap-2">

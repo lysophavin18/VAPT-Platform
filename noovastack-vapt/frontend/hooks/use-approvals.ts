@@ -10,7 +10,7 @@ export function useApprovals(statusFilter?: string) {
     queryKey: ['approvals', statusFilter ?? 'all'],
     queryFn: () => api.approvals(statusFilter, token),
     enabled: Boolean(token),
-    refetchInterval: 30000,
+    refetchInterval: 10000,
   });
 }
 

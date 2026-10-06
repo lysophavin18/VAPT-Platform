@@ -24,6 +24,15 @@ SCANNER_TOOL_CATALOG = [
     {"id": "depx", "name": "depx", "module": "depx_audit", "category": "dependency", "purpose": "Malicious package and supply-chain intelligence audit", "safe_default": True},
     {"id": "trivy", "name": "Trivy", "module": "trivy_scan", "category": "dependency", "purpose": "Container, filesystem, and dependency CVE checks", "safe_default": True},
     {"id": "grype", "name": "Grype", "module": "grype_scan", "category": "dependency", "purpose": "SBOM and dependency vulnerability matching", "safe_default": True},
+    # API security
+    {"id": "zap", "name": "OWASP ZAP", "module": "zap_api_scan", "category": "api", "purpose": "Active and passive API vulnerability scanning", "safe_default": False},
+    {"id": "arjun", "name": "Arjun", "module": "arjun_param_discovery", "category": "api", "purpose": "HTTP parameter discovery for API endpoints", "safe_default": True},
+    # Cloud & infrastructure
+    {"id": "prowler", "name": "Prowler", "module": "prowler_cloud_audit", "category": "cloud", "purpose": "AWS/GCP/Azure security configuration audit", "safe_default": True},
+    {"id": "scoutsuite", "name": "ScoutSuite", "module": "scoutsuite_cloud_audit", "category": "cloud", "purpose": "Multi-cloud security posture assessment", "safe_default": True},
+    # Network analysis
+    {"id": "masscan", "name": "Masscan", "module": "masscan_port_scan", "category": "network", "purpose": "Fast large-scale port scanning", "safe_default": False},
+    {"id": "shodan", "name": "Shodan CLI", "module": "shodan_osint", "category": "recon", "purpose": "Passive OSINT lookup via Shodan for approved targets", "safe_default": True},
 ]
 
 MODULE_TO_TOOL = {item["module"]: item for item in SCANNER_TOOL_CATALOG}

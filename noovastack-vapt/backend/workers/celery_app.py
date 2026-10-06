@@ -21,6 +21,7 @@ app = Celery(
         "workers.tasks_reporting",
         "workers.tasks_scheduling",
         "workers.tasks_ai",
+        "workers.tasks_monitoring",
     ],
 )
 
@@ -33,6 +34,9 @@ app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
+    result_expires=86400,  # keep results for 24 h
+    task_soft_time_limit=600,  # 10 min soft limit — tasks should self-terminate
+    task_time_limit=660,  # 11 min hard kill
     task_queues={
         "celery": {"exchange": "celery", "routing_key": "celery"},
         "asset_discovery": {"exchange": "asset_discovery", "routing_key": "asset_discovery"},

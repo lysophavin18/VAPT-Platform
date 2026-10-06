@@ -140,6 +140,7 @@ function ScanActions({ scan, actions }: { scan: Scan; actions: ReturnType<typeof
   return <div className="flex flex-wrap gap-2">
     {scan.status === 'completed' ? <Link href={`/scans/${scan.id}/results`}><Button variant="secondary"><FileText className="h-4 w-4" /> Results</Button></Link> : null}
     {scan.status === 'draft' ? <Button variant="secondary" onClick={() => actions.mutate({ id: scan.id, action: 'start' })}>Start</Button> : null}
+    {(scan.status === 'pending' || scan.status === 'draft') ? <Button variant="outline" disabled={actions.isPending} onClick={() => actions.mutate({ id: scan.id, action: 'request-approval' })}>Request Approval</Button> : null}
     {scan.status === 'running' ? <Button variant="outline" onClick={() => actions.mutate({ id: scan.id, action: 'pause' })}><Pause className="h-4 w-4" /> Pause</Button> : null}
     {scan.status !== 'completed' && scan.status !== 'cancelled' && scan.status !== 'failed' ? <ConfirmationDialog title="Emergency Stop" description="This immediately stops the scan task. Use it only if a scan may affect availability, scope, or production data." confirmLabel="Emergency Stop" requireText="STOP" danger onConfirm={() => actions.mutate({ id: scan.id, action: 'kill' })} /> : null}
   </div>;

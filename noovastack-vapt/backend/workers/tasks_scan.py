@@ -604,6 +604,12 @@ def _resolve_tool_binary(tool_id: str) -> str | None:
         "testssl": ["testssl.sh", "testssl"],
         "pip-audit": ["pip-audit"],
         "httpx": ["httpx-pd", "httpx"],
+        "zap": ["zap.sh", "zaproxy", "zap"],
+        "scoutsuite": ["scout", "scoutsuite"],
+        "shodan": ["shodan"],
+        "masscan": ["masscan"],
+        "prowler": ["prowler"],
+        "arjun": ["arjun"],
     }
     for candidate in aliases.get(tool_id, [tool_id]):
         path = shutil.which(candidate)
@@ -612,9 +618,29 @@ def _resolve_tool_binary(tool_id: str) -> str | None:
     return None
 
 
+_ALLOWED_REPO_ROOTS = [Path("/repos"), Path("/app/repos"), Path("/workspace")]
+
+
+def _validate_repo_path(raw: str) -> str | None:
+    """Return resolved path only if it falls under an allowed root; else None."""
+    try:
+        resolved = Path(raw).resolve()
+    except (TypeError, ValueError, OSError):
+        return None
+    for root in _ALLOWED_REPO_ROOTS:
+        try:
+            resolved.relative_to(root)
+            return str(resolved)
+        except ValueError:
+            continue
+    logger.warning("repo_path '%s' rejected: outside allowed roots", raw)
+    return None
+
+
 def _external_tool_command(binary: str, tool_id: str, target: str, config: dict) -> list[str] | None:
     host, url = _asset_host_and_url(target)
-    repo_path = config.get("repository_path") or config.get("repo_path")
+    _raw_repo = config.get("repository_path") or config.get("repo_path")
+    repo_path = _validate_repo_path(_raw_repo) if _raw_repo else None
     if tool_id == "curl" and url:
         method = str(config.get("http_method") or "GET").upper()
         if method not in ("GET", "HEAD", "OPTIONS"):
@@ -674,6 +700,27 @@ def _external_tool_command(binary: str, tool_id: str, target: str, config: dict)
         return [binary, "fs", "--format", "json", repo_path]
     if tool_id == "grype" and repo_path:
         return [binary, repo_path, "-o", "json"]
+    # API security
+    if tool_id == "zap" and url:
+        return [binary, "-cmd", "-quickurl", url, "-quickprogress", "-quickout", "/tmp/zap_report.json"]
+    if tool_id == "arjun" and url:
+        return [binary, "-u", url, "--stable", "-oJ", "/dev/stdout"]
+    # Cloud & infrastructure
+    if tool_id == "prowler":
+        provider = config.get("cloud_provider", "aws")
+        return [binary, provider, "--no-banner", "-M", "json"]
+    if tool_id == "scoutsuite":
+        provider = config.get("cloud_provider", "aws")
+        return [binary, provider, "--no-browser", "--result-format", "json"]
+    # Network analysis
+    if tool_id == "masscan" and host:
+        ports = config.get("port_range", "1-65535")
+        rate = str(config.get("masscan_rate", 500))
+        return [binary, host, "-p", ports, "--rate", rate, "-oJ", "/dev/stdout"]
+    if tool_id == "shodan" and host and not _looks_like_ip_address(host):
+        return [binary, "domain", host]
+    if tool_id == "shodan" and host and _looks_like_ip_address(host):
+        return [binary, "host", host]
     return None
 
 
@@ -1409,6 +1456,171 @@ async def _ingest_tool_findings(session, scan, asset, tool_id: str, observation:
                 "katana",
             )
             imported += 1
+
+    elif tool_id == "zap":
+        try:
+            report = json.loads(stdout) if stdout.strip().startswith("{") else {}
+        except json.JSONDecodeError:
+            report = {}
+        for site in report.get("site", []):
+            for alert in site.get("alerts", []):
+                severity_map = {"3": "high", "2": "medium", "1": "low", "0": "informational"}
+                sev = severity_map.get(str(alert.get("riskcode", "0")), "informational")
+                await _add_finding(
+                    session, scan.id, asset.id,
+                    f"ZAP: {alert.get('name', 'Alert')}",
+                    (alert.get("desc") or "OWASP ZAP detected a potential issue.") + f"\nURL: {alert.get('instances', [{}])[0].get('uri', '')}",
+                    sev,
+                    "A05:2021 - Security Misconfiguration",
+                    alert.get("cweid") or "CWE-200",
+                    _TOOL_SEVERITY_CVSS.get(sev, 0.0),
+                    alert.get("solution") or "Review and remediate the flagged behaviour.",
+                    "zap",
+                    {"reference": alert.get("reference", ""), "plugin_id": alert.get("pluginid")},
+                )
+                imported += 1
+
+    elif tool_id == "arjun":
+        try:
+            data = json.loads(stdout) if stdout.strip().startswith("{") else {}
+        except json.JSONDecodeError:
+            data = {}
+        params = data.get("params", []) if isinstance(data.get("params"), list) else []
+        if params:
+            await _add_finding(
+                session, scan.id, asset.id,
+                "Hidden API Parameters Discovered",
+                f"Arjun discovered {len(params)} hidden parameter(s) on the target endpoint: {', '.join(params[:30])}.",
+                "low",
+                "A01:2021 - Broken Access Control",
+                "CWE-200",
+                _TOOL_SEVERITY_CVSS.get("low", 0.0),
+                "Review each discovered parameter for unintended exposure or privilege escalation potential.",
+                "arjun",
+                {"parameters": params[:50]},
+            )
+            imported += 1
+
+    elif tool_id == "prowler":
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                entry = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            status = entry.get("Status") or entry.get("status", "")
+            if status.upper() not in ("FAIL", "CRITICAL", "HIGH", "MEDIUM"):
+                continue
+            sev = str(entry.get("Severity") or entry.get("severity") or "medium").lower()
+            await _add_finding(
+                session, scan.id, asset.id,
+                f"Prowler: {entry.get('CheckTitle') or entry.get('check_title') or 'Cloud Misconfiguration'}",
+                (entry.get("StatusExtended") or entry.get("description") or "Prowler detected a cloud security issue."),
+                sev if sev in ("critical", "high", "medium", "low") else "medium",
+                "A05:2021 - Security Misconfiguration",
+                "CWE-732",
+                _TOOL_SEVERITY_CVSS.get(sev, 5.0),
+                entry.get("Remediation", {}).get("Recommendation", {}).get("Text") or "Apply the recommended cloud security configuration.",
+                "prowler",
+                {"service": entry.get("ServiceName"), "region": entry.get("Region"), "resource": entry.get("ResourceArn")},
+            )
+            imported += 1
+
+    elif tool_id == "scoutsuite":
+        try:
+            data = json.loads(stdout) if stdout.strip().startswith("{") else {}
+        except json.JSONDecodeError:
+            data = {}
+        for service_name, service_data in (data.get("services") or {}).items():
+            for finding_key, finding in (service_data.get("findings") or {}).items():
+                if not finding.get("flagged_items"):
+                    continue
+                level = str(finding.get("level") or "medium").lower()
+                sev = {"danger": "high", "warning": "medium", "good": "informational"}.get(level, "medium")
+                await _add_finding(
+                    session, scan.id, asset.id,
+                    f"ScoutSuite: {finding.get('description') or finding_key}",
+                    f"Service: {service_name}. {finding.get('rationale') or 'ScoutSuite detected a cloud configuration issue.'} ({finding.get('flagged_items', 0)} resource(s) affected)",
+                    sev,
+                    "A05:2021 - Security Misconfiguration",
+                    "CWE-732",
+                    _TOOL_SEVERITY_CVSS.get(sev, 5.0),
+                    finding.get("remediation") or "Review and apply the recommended cloud security configuration.",
+                    "scoutsuite",
+                    {"service": service_name, "flagged_items": finding.get("flagged_items")},
+                )
+                imported += 1
+
+    elif tool_id == "masscan":
+        open_ports = []
+        for line in stdout.splitlines():
+            line = line.strip()
+            if not line.startswith("{"):
+                continue
+            try:
+                entry = json.loads(line.rstrip(","))
+            except json.JSONDecodeError:
+                continue
+            for port_info in entry.get("ports", []):
+                port = port_info.get("port")
+                proto = port_info.get("proto", "tcp")
+                if port:
+                    open_ports.append(f"{proto}/{port}")
+        if open_ports:
+            await _add_finding(
+                session, scan.id, asset.id,
+                "Open Ports Discovered (Masscan)",
+                f"Masscan identified {len(open_ports)} open port(s) on the approved target: {', '.join(sorted(set(open_ports))[:50])}.",
+                "informational",
+                "A05:2021 - Security Misconfiguration",
+                "CWE-200",
+                0.0,
+                "Review each open port and confirm it is required for the application. Close unnecessary services.",
+                "masscan",
+                {"open_ports": sorted(set(open_ports))[:100]},
+            )
+            imported += 1
+
+    elif tool_id == "shodan":
+        vulns_seen = set()
+        for line in stdout.splitlines():
+            line = line.strip()
+            if line.startswith("Vulnerabilities:"):
+                continue
+            if line.startswith("CVE-"):
+                cve_id = line.split()[0]
+                if cve_id not in vulns_seen:
+                    vulns_seen.add(cve_id)
+                    await _add_finding(
+                        session, scan.id, asset.id,
+                        f"Shodan OSINT: {cve_id} Exposure",
+                        f"Shodan's passive index reports {cve_id} associated with the approved target. Validate whether the affected service/version is present.",
+                        "medium",
+                        "A06:2021 - Vulnerable and Outdated Components",
+                        "CWE-1104",
+                        _TOOL_SEVERITY_CVSS.get("medium", 5.0),
+                        f"Investigate {cve_id} and patch or mitigate the affected component if confirmed.",
+                        "shodan",
+                        {"cve_id": cve_id, "source": "shodan_osint"},
+                    )
+                    imported += 1
+        if not vulns_seen:
+            ports_line = next((l for l in stdout.splitlines() if "Ports:" in l), None)
+            if ports_line:
+                await _add_finding(
+                    session, scan.id, asset.id,
+                    "Shodan OSINT: Exposed Services",
+                    f"Shodan passive lookup for the approved target returned: {ports_line.strip()}. No CVEs indexed.",
+                    "informational",
+                    "A05:2021 - Security Misconfiguration",
+                    "CWE-200",
+                    0.0,
+                    "Document the exposed services as asset metadata.",
+                    "shodan",
+                )
+                imported += 1
 
     return imported
 

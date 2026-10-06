@@ -965,7 +965,10 @@ def normalize_target(target: str) -> str:
 
 
 def ai_headers() -> dict[str, str]:
-    return {"Authorization": f"Bearer {settings.AI_API_KEY}", "Content-Type": "application/json"}
+    headers = {"Authorization": f"Bearer {settings.AI_API_KEY}", "Content-Type": "application/json"}
+    if "opencode.ai" in settings.AI_BASE_URL:
+        headers["x-opencode-session"] = settings.AI_API_KEY
+    return headers
 
         
 def normalize_mode(mode: str) -> str:
@@ -1033,6 +1036,97 @@ async def check_local_model() -> dict[str, Any]:
         "available": available,
         "status": "healthy" if available else "model_missing",
     }
+
+
+class AIConfigUpdate(BaseModel):
+    provider: str | None = None
+    base_url: str | None = None
+    api_key: str | None = None
+    model: str | None = None
+    timeout_seconds: int | None = None
+    max_output_tokens: int | None = None
+    temperature: float | None = None
+
+
+@router.get("/config")
+async def get_ai_config(current_user: User = Depends(require_user)):
+    """Return current AI provider config (API key is masked)."""
+    key = settings.AI_API_KEY
+    masked_key = (key[:8] + "..." + key[-4:]) if len(key) > 12 else ("*" * len(key) if key else "")
+    return {
+        "provider": settings.AI_PROVIDER,
+        "base_url": settings.AI_BASE_URL,
+        "api_key_masked": masked_key,
+        "model": settings.AI_MODEL,
+        "timeout_seconds": settings.AI_TIMEOUT_SECONDS,
+        "max_output_tokens": settings.AI_MAX_OUTPUT_TOKENS,
+        "temperature": settings.AI_TEMPERATURE,
+    }
+
+
+@router.patch("/config")
+async def update_ai_config(
+    payload: AIConfigUpdate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    """Persist AI provider settings to the .env file (admin only)."""
+    from auth import require_admin as _require_admin
+    from fastapi import Request
+    import os
+
+    if getattr(current_user, "role", None) != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
+    if not os.path.exists(env_path):
+        raise HTTPException(status_code=500, detail=".env file not found — update manually")
+
+    with open(env_path, "r") as f:
+        lines = f.readlines()
+
+    updates: dict[str, str] = {}
+    if payload.provider is not None:
+        updates["AI_PROVIDER"] = payload.provider
+    if payload.base_url is not None:
+        updates["AI_BASE_URL"] = payload.base_url
+    if payload.api_key is not None and payload.api_key and not payload.api_key.endswith("..."):
+        updates["AI_API_KEY"] = payload.api_key
+    if payload.model is not None:
+        updates["AI_MODEL"] = payload.model
+    if payload.timeout_seconds is not None:
+        updates["AI_TIMEOUT_SECONDS"] = str(payload.timeout_seconds)
+    if payload.max_output_tokens is not None:
+        updates["AI_MAX_OUTPUT_TOKENS"] = str(payload.max_output_tokens)
+    if payload.temperature is not None:
+        updates["AI_TEMPERATURE"] = str(payload.temperature)
+
+    new_lines = []
+    found_keys = set()
+    for line in lines:
+        key = line.split("=")[0].strip()
+        if key in updates:
+            new_lines.append(f"{key}={updates[key]}\n")
+            found_keys.add(key)
+        else:
+            new_lines.append(line)
+
+    for key, val in updates.items():
+        if key not in found_keys:
+            new_lines.append(f"{key}={val}\n")
+
+    with open(env_path, "w") as f:
+        f.writelines(new_lines)
+
+    db.add(AuditLog(
+        actor_id=current_user.id,
+        event_type="administration",
+        action="ai_config_updated",
+        details={"updated_keys": list(updates.keys())},
+    ))
+    await db.commit()
+
+    return {"message": "AI configuration saved. Restart the backend for changes to take effect.", "updated": list(updates.keys())}
 
 
 async def record_action(db: AsyncSession, current_user: User, action: str, details: dict[str, Any]):

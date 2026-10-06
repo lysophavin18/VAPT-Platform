@@ -8,7 +8,7 @@ export default function AuthLayout({ children }: { children: ReactNode }) {
     <main className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-blue-50 dark:from-[#080F1A] dark:via-[#0B1423] dark:to-[#0D1828]">
       <div className="mx-auto grid min-h-screen max-w-7xl items-center gap-10 px-4 py-10 lg:grid-cols-[1fr_460px] lg:px-8">
         <section className="hidden lg:block">
-          <NstLogo variant="full" className="h-20 max-w-sm" />
+          <NstLogo variant="full" className="h-32 w-80" />
           <p className="mt-8 text-sm font-semibold uppercase tracking-[0.3em] text-[#0B5E9E] dark:text-blue-400">{APP_NAME}</p>
           <h1 className="mt-6 max-w-2xl text-5xl font-bold tracking-tight text-[#102033] dark:text-white">
             Secure vulnerability assessment made simple.

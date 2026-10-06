@@ -188,6 +188,7 @@ export const api = {
   },
   asset: (assetId: string, token?: string | null) => request<Asset>(`/assets/${assetId}`, { token }),
   createAsset: (projectId: string, payload: Record<string, unknown>, token?: string | null) => request<Asset>(`/projects/${projectId}/assets`, { method: 'POST', body: JSON.stringify(payload), token }),
+  pendingAssets: (token?: string | null) => request<Asset[]>(`/assets?approval_status=pending`, { token }),
   approveAsset: (assetId: string, token?: string | null) => request<Asset>(`/assets/${assetId}/approve`, { method: 'POST', token }),
   rejectAsset: (assetId: string, token?: string | null) => request<Asset>(`/assets/${assetId}/reject`, { method: 'POST', token }),
   reprobe: (assetId: string, token?: string | null) => request<Asset>(`/assets/${assetId}/reprobe`, { method: 'POST', token }),
@@ -248,6 +249,8 @@ export const api = {
   adminSettings: (token?: string | null) => request<AdminSettings>('/admin/settings', { token }),
   updateAdminSettings: (settings: AdminSettings, token?: string | null) => request<AdminSettings>('/admin/settings', { method: 'PATCH', body: JSON.stringify({ settings }), token }),
   scannerTools: (token?: string | null) => request<ScannerTool[]>('/admin/scanner-tools', { token }),
+  aiConfig: (token?: string | null) => request<{ provider: string; base_url: string; api_key_masked: string; model: string; timeout_seconds: number; max_output_tokens: number; temperature: number }>('/ai-agents/config', { token }),
+  updateAiConfig: (payload: { provider?: string; base_url?: string; api_key?: string; model?: string; timeout_seconds?: number; max_output_tokens?: number; temperature?: number }, token?: string | null) => request<{ message: string; updated: string[] }>('/ai-agents/config', { method: 'PATCH', body: JSON.stringify(payload), token }),
   localAiHealth: (token?: string | null) => request<{ provider: string; model: string; context_window: string; deployment: string; available: boolean; status: string }>('/ai-agents/local-model/health', { token }),
   localAiChat: (payload: { prompt: string; mode: string; model?: string; conversation_id?: string; project_id?: string; engagement_id?: string; finding_id?: string }, token?: string | null, signal?: AbortSignal) => request<LocalAIChatResponse>('/ai-agents/local-chat', { method: 'POST', body: JSON.stringify(payload), token, signal }),
   localAiChatStream: async (
