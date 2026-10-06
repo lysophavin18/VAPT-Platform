@@ -24,7 +24,8 @@ class Settings(BaseSettings):
     DEBUG: bool = False
 
     DATABASE_URL: str
-    DATABASE_URL_SYNC: str
+    # Derived from DATABASE_URL if not explicitly set — replaces asyncpg driver with psycopg2
+    DATABASE_URL_SYNC: str = ""
 
     REDIS_URL: str = os.getenv("REDIS_URL", "redis://localhost:6379/0")
     CELERY_BROKER_URL: str = os.getenv("CELERY_BROKER_URL", "redis://localhost:6379/1")
@@ -48,6 +49,14 @@ class Settings(BaseSettings):
     AI_TIMEOUT_SECONDS: int = int(os.getenv("AI_TIMEOUT_SECONDS", "240"))
     AI_MAX_OUTPUT_TOKENS: int = int(os.getenv("AI_MAX_OUTPUT_TOKENS", "4096"))
     AI_TEMPERATURE: float = float(os.getenv("AI_TEMPERATURE", "0.2"))
+
+    @field_validator("DATABASE_URL_SYNC", mode="before")
+    @classmethod
+    def derive_sync_url(cls, v: str, info) -> str:
+        if v:
+            return v
+        async_url = (info.data or {}).get("DATABASE_URL", "")
+        return async_url.replace("postgresql+asyncpg://", "postgresql://").replace("+asyncpg", "")
 
     @field_validator("SECRET_KEY")
     @classmethod
