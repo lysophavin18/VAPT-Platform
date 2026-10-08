@@ -1,0 +1,80 @@
+name: scanner-tools
+
+on:
+  pull_request:
+    paths:
+      - noovastack-vapt/backend/Dockerfile
+      - noovastack-vapt/backend/requirements.txt
+      - noovastack-vapt/backend/scripts/check_scanner_tools.sh
+      - noovastack-vapt/backend/scans/tools.py
+      - noovastack-vapt/backend/workers/tasks_scan.py
+      - .github/workflows/scanner-tools.yml
+  push:
+    branches: [main]
+    paths:
+      - noovastack-vapt/backend/Dockerfile
+      - noovastack-vapt/backend/scripts/check_scanner_tools.sh
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+concurrency:
+  group: scanner-tools-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Python syntax check
+        working-directory: noovastack-vapt/backend
+        run: python3 -m py_compile main.py scans/tools.py workers/*.py
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build backend image
+        uses: docker/build-push-action@v6
+        with:
+          context: noovastack-vapt/backend
+          file: noovastack-vapt/backend/Dockerfile
+          tags: noovastack-backend:ci
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify scanner tools
+        id: verify
+        run: |
+          set +e
+          docker run --rm \
+            -v "$PWD/noovastack-vapt/backend/scripts:/scripts:ro" \
+            noovastack-backend:ci bash /scripts/check_scanner_tools.sh > tool-report.md
+          echo "exit_code=$?" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Scanner tool versions"
+            echo
+            cat tool-report.md
+          } | tee -a "$GITHUB_STEP_SUMMARY" > tool-comment.md
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: scanner-tool-report
+          path: tool-report.md
+
+      - name: Comment version table on PR
+        if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ github.event.pull_request.number }}
+        run: gh pr comment "$PR" --body-file tool-comment.md --edit-last || gh pr comment "$PR" --body-file tool-comment.md
+
+      - name: Fail if any tool is missing or broken
+        if: steps.verify.outputs.exit_code != '0'
+        run: |
+          echo "One or more scanner tools are missing or broken - see the table above."
+          exit 1
