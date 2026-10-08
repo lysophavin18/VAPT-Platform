@@ -103,7 +103,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # renovate: datasource=pypi depName=wapiti3
-ARG WAPITI_VERSION=3.2.4
+ARG WAPITI_VERSION=3.3.2
 RUN python -m venv /opt/wapiti \
     && /opt/wapiti/bin/pip install --no-cache-dir wapiti3==${WAPITI_VERSION} \
     && ln -s /opt/wapiti/bin/wapiti /usr/local/bin/wapiti
