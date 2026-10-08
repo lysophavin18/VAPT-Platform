@@ -3,7 +3,7 @@
   "extends": ["config:recommended", ":dependencyDashboard"],
   "enabledManagers": ["custom.regex"],
   "timezone": "Asia/Phnom_Penh",
-  "schedule": ["before 9am on monday"],
+  "schedule": ["before 9am on sunday"],
   "minimumReleaseAge": "3 days",
   "prConcurrentLimit": 5,
   "labels": ["scanner-tool-update"],
