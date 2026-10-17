@@ -22,7 +22,7 @@ FROM golang:alpine AS pdtools
 # renovate: datasource=go depName=github.com/projectdiscovery/nuclei/v3
 ARG NUCLEI_VERSION=v3.11.1
 # renovate: datasource=go depName=github.com/projectdiscovery/subfinder/v2
-ARG SUBFINDER_VERSION=v2.16.0
+ARG SUBFINDER_VERSION=v2.17.0
 # renovate: datasource=go depName=github.com/projectdiscovery/httpx
 ARG HTTPX_VERSION=v1.12.0
 # renovate: datasource=go depName=github.com/projectdiscovery/dnsx
@@ -54,7 +54,7 @@ RUN apk add --no-cache libpcap-dev build-base \
 
 FROM alpine:3.22 AS trivy-dl
 # renovate: datasource=github-releases depName=aquasecurity/trivy
-ARG TRIVY_VERSION=0.75.0
+ARG TRIVY_VERSION=0.76.0
 RUN apk add --no-cache curl tar \
     && curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
        | tar -xz -C /usr/local/bin trivy \
@@ -103,7 +103,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # renovate: datasource=pypi depName=wapiti3
-ARG WAPITI_VERSION=3.2.4
+ARG WAPITI_VERSION=3.3.2
 RUN python -m venv /opt/wapiti \
     && /opt/wapiti/bin/pip install --no-cache-dir wapiti3==${WAPITI_VERSION} \
     && ln -s /opt/wapiti/bin/wapiti /usr/local/bin/wapiti
