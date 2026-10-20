@@ -268,6 +268,22 @@ class Finding(Base):
     scan = relationship("Scan", back_populates="findings")
     asset = relationship("Asset", back_populates="findings")
     evidence_items = relationship("Evidence", back_populates="finding", cascade="all, delete-orphan")
+    comments = relationship("FindingComment", back_populates="finding", cascade="all, delete-orphan", order_by="FindingComment.created_at")
+
+
+class FindingComment(Base):
+    __tablename__ = "finding_comments"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    finding_id = Column(UUID(as_uuid=True), ForeignKey("findings.id", ondelete="CASCADE"), nullable=False, index=True)
+    author_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    author_name = Column(String(255))
+    body = Column(Text, nullable=False)
+    comment_type = Column(String(30), default="comment")  # comment | remediation | question
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    finding = relationship("Finding", back_populates="comments")
 
 
 class Evidence(Base):

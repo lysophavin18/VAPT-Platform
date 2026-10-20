@@ -22,6 +22,7 @@ app = Celery(
         "workers.tasks_scheduling",
         "workers.tasks_ai",
         "workers.tasks_monitoring",
+        "workers.tasks_cve",
     ],
 )
 
@@ -53,6 +54,7 @@ app.conf.update(
         "workers.tasks_scheduling.*": {"queue": "scheduling"},
         "workers.tasks_ai.*": {"queue": "ai"},
         "workers.tasks_monitoring.*": {"queue": "monitoring"},
+        "workers.tasks_cve.*": {"queue": "reporting"},
     },
     beat_schedule={
         "check-scheduled-scans": {
@@ -63,6 +65,15 @@ app.conf.update(
             "task": "workers.tasks_monitoring.run_due_domain_monitors",
             "schedule": 3600.0,   # dispatcher runs every hour; per-monitor interval controls actual frequency
         },
+        "daily-cve-intelligence-sync": {
+            "task": "workers.tasks_cve.sync_daily_intelligence",
+            "schedule": 86400.0,
+            "args": [2, 2000],
+        },
+        "daily-nuclei-template-update": {
+            "task": "workers.tasks_cve.update_nuclei_templates",
+            "schedule": 86400.0,
+        },
     },
 )
 
@@ -70,3 +81,4 @@ run_asset_discovery = app.signature("workers.tasks_discovery.run_asset_discovery
 run_scan = app.signature("workers.tasks_scan.run_scan")
 generate_report_task = app.signature("workers.tasks_reporting.generate_report")
 run_domain_monitor_check = app.signature("workers.tasks_monitoring.run_domain_monitor_check")
+sync_cve_database_task = app.signature("workers.tasks_cve.sync_cve_database")

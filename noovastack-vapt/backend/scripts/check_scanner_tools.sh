@@ -48,7 +48,7 @@ for entry in "${TOOLS[@]}"; do
     continue
   fi
   # Some tools (nikto, testssl.sh) report missing dependencies but still exit 0
-  err=$(echo "$out" | grep -Ei "required module not found|can't locate|fatal error|command not found|no such file|error while loading shared" | head -1)
+  err=$(echo "$out" | grep -Ei "required module not found|missing dependencies|can't locate|fatal error|command not found|no such file|error while loading shared" | head -1)
   if [ -n "$err" ]; then
     echo "| $name | BROKEN | $(echo "$err" | tr '|' '/') |"
     failed=1

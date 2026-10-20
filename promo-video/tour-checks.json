@@ -1,0 +1,65 @@
+[
+  {
+    "label": "Dashboard",
+    "route": "/dashboard",
+    "seconds": 4,
+    "title": "NoovaStack VAPT Platform",
+    "errors": []
+  },
+  {
+    "label": "Projects",
+    "route": "/projects",
+    "seconds": 14,
+    "title": "NoovaStack VAPT Platform",
+    "errors": []
+  },
+  {
+    "label": "Assets",
+    "route": "/assets",
+    "seconds": 24,
+    "title": "NoovaStack VAPT Platform",
+    "errors": []
+  },
+  {
+    "label": "Scans",
+    "route": "/scans",
+    "seconds": 34,
+    "title": "NoovaStack VAPT Platform",
+    "errors": []
+  },
+  {
+    "label": "Findings",
+    "route": "/findings",
+    "seconds": 43,
+    "title": "NoovaStack VAPT Platform",
+    "errors": []
+  },
+  {
+    "label": "Approvals",
+    "route": "/approvals",
+    "seconds": 53,
+    "title": "NoovaStack VAPT Platform",
+    "errors": []
+  },
+  {
+    "label": "Schedules",
+    "route": "/schedules",
+    "seconds": 63,
+    "title": "NoovaStack VAPT Platform",
+    "errors": []
+  },
+  {
+    "label": "AI assistant",
+    "route": "/ai-agents",
+    "seconds": 73,
+    "title": "NoovaStack VAPT Platform",
+    "errors": []
+  },
+  {
+    "label": "Reports",
+    "route": "/reports",
+    "seconds": 83,
+    "title": "NoovaStack VAPT Platform",
+    "errors": []
+  }
+]

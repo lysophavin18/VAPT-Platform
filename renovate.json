@@ -1,17 +1,29 @@
 {
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "extends": ["config:recommended", ":dependencyDashboard"],
-  "enabledManagers": ["custom.regex"],
+  "extends": [
+    "config:recommended",
+    ":dependencyDashboard"
+  ],
+  "enabledManagers": [
+    "custom.regex",
+    "dockerfile"
+  ],
   "timezone": "Asia/Phnom_Penh",
-  "schedule": ["before 9am on sunday"],
+  "schedule": [
+    "before 9am on sunday"
+  ],
   "minimumReleaseAge": "3 days",
   "prConcurrentLimit": 5,
-  "labels": ["scanner-tool-update"],
+  "labels": [
+    "scanner-tool-update"
+  ],
   "customManagers": [
     {
       "customType": "regex",
       "description": "Scanner tool versions pinned via '# renovate:' comments in the backend Dockerfile",
-      "managerFilePatterns": ["/^noovastack-vapt/backend/Dockerfile$/"],
+      "managerFilePatterns": [
+        "/^noovastack-vapt/backend/Dockerfile$/"
+      ],
       "matchStrings": [
         "# renovate: datasource=(?<datasource>[a-z-]+) depName=(?<depName>\\S+)\\s+ARG [A-Z_]+_VERSION=(?<currentValue>\\S+)"
       ]
@@ -20,28 +32,84 @@
   "packageRules": [
     {
       "description": "These release tags use a 'v' prefix but the Dockerfile ARG stores the bare version",
-      "matchPackageNames": ["aquasecurity/trivy", "anchore/grype", "projectdiscovery/depx"],
+      "matchPackageNames": [
+        "aquasecurity/trivy",
+        "anchore/grype",
+        "projectdiscovery/depx"
+      ],
       "extractVersion": "^v(?<version>.*)$"
     },
     {
-      "matchPackageNames": ["projectdiscovery/depx"],
-      "prBodyNotes": ["**depx is checksum-pinned:** update the amd64/arm64 `checksum=` values in the depx stage of `noovastack-vapt/backend/Dockerfile` from the release's checksums file, or the build will fail."]
+      "matchPackageNames": [
+        "projectdiscovery/depx"
+      ],
+      "prBodyNotes": [
+        "**depx is checksum-pinned:** update the amd64/arm64 `checksum=` values in the depx stage of `noovastack-vapt/backend/Dockerfile` from the release's checksums file, or the build will fail."
+      ]
     },
     {
       "description": "Bundle minor/patch scanner updates into one weekly PR",
-      "matchPackageNames": ["!projectdiscovery/depx"],
-      "matchManagers": ["custom.regex"],
-      "matchUpdateTypes": ["minor", "patch"],
+      "matchPackageNames": [
+        "!projectdiscovery/depx"
+      ],
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
       "groupName": "scanner tools (minor/patch)"
     },
     {
+      "description": "Base images: pin digests so a Debian/Alpine security rebuild shows up as a PR (this is how nmap and sslscan from apt get refreshed)",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchUpdateTypes": [
+        "digest",
+        "pin",
+        "pinDigest",
+        "minor",
+        "patch"
+      ],
+      "groupName": "backend base images"
+    },
+    {
+      "description": "Stay on Python 3.12 until requirements are checked against a newer Python",
+      "matchManagers": [
+        "dockerfile"
+      ],
+      "matchPackageNames": [
+        "python"
+      ],
+      "matchUpdateTypes": [
+        "major",
+        "minor"
+      ],
+      "enabled": false
+    },
+    {
       "description": "Major scanner updates get their own PR and can change CLI flags or output format",
-      "matchManagers": ["custom.regex"],
-      "matchUpdateTypes": ["major"],
-      "labels": ["scanner-tool-update", "major-update"]
+      "matchManagers": [
+        "custom.regex"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ],
+      "labels": [
+        "scanner-tool-update",
+        "major-update"
+      ]
     }
   ],
   "prBodyNotes": [
     "### Scanner update review checklist\n- [ ] Read the upstream release notes linked above (look for changed CLI flags, output/JSON format, removed options, new network behaviour)\n- [ ] `scanner-tools` CI check is green and the version table in the PR comment shows the expected versions\n- [ ] If CLI flags changed: `_external_tool_command` in `backend/workers/tasks_scan.py` still builds a valid command\n- [ ] If output format changed: `_ingest_tool_findings` in `backend/workers/tasks_scan.py` still parses it\n- [ ] Ran a quick/standard scan against a lab target with the rebuilt image and findings look right\n- [ ] Tool is still non-destructive by default (`safe_default` in `backend/scans/tools.py` unchanged or re-reviewed)"
-  ]
+  ],
+  "dockerfile": {
+    "managerFilePatterns": [
+      "/^noovastack-vapt/backend/Dockerfile$/"
+    ],
+    "pinDigests": true
+  }
 }

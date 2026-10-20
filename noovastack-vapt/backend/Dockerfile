@@ -81,7 +81,7 @@ COPY --from=grype-dl /usr/local/bin/grype                                       
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libpq-dev ca-certificates curl git \
-    nmap sqlmap sslscan whatweb perl openssl dnsutils \
+    nmap sslscan perl openssl dnsutils ruby ruby-addressable \
     libxml-writer-perl bsdextrautils procps \
     libcairo2 libpango-1.0-0 libpangoft2-1.0-0 libgdk-pixbuf-2.0-0 \
     libffi-dev shared-mime-info fonts-dejavu-core \
@@ -99,6 +99,11 @@ RUN git clone --depth 1 --branch ${TESTSSL_VERSION} https://github.com/testssl/t
     && ln -s /opt/testssl.sh/testssl.sh /usr/local/bin/testssl.sh \
     && ln -s /opt/testssl.sh/testssl.sh /usr/local/bin/testssl
 
+# renovate: datasource=github-tags depName=urbanadventurer/WhatWeb
+ARG WHATWEB_VERSION=v0.6.4
+RUN git clone --depth 1 --branch ${WHATWEB_VERSION} https://github.com/urbanadventurer/WhatWeb.git /opt/whatweb \
+    && ln -s /opt/whatweb/whatweb /usr/local/bin/whatweb
+
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
@@ -107,6 +112,12 @@ ARG WAPITI_VERSION=3.2.4
 RUN python -m venv /opt/wapiti \
     && /opt/wapiti/bin/pip install --no-cache-dir wapiti3==${WAPITI_VERSION} \
     && ln -s /opt/wapiti/bin/wapiti /usr/local/bin/wapiti
+
+# renovate: datasource=pypi depName=sqlmap
+ARG SQLMAP_VERSION=1.10.10
+RUN python -m venv /opt/sqlmap \
+    && /opt/sqlmap/bin/pip install --no-cache-dir sqlmap==${SQLMAP_VERSION} \
+    && ln -s /opt/sqlmap/bin/sqlmap /usr/local/bin/sqlmap
 
 # renovate: datasource=pypi depName=bandit
 ARG BANDIT_VERSION=1.9.4

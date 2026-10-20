@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Database, FileText, Lock, Settings, ShieldCheck, SlidersHorizontal, Users, X, XCircle } from 'lucide-react';
+import { CheckCircle, Database, FileText, Lock, Plus, Settings, ShieldCheck, SlidersHorizontal, Users, X, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -12,7 +12,11 @@ import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/input';
 import { useAuth } from '@/hooks/use-auth';
 import { api, type AdminSettings } from '@/lib/api-client';
+import { canAccess } from '@/lib/permissions';
 import type { Approval, Asset, ScanProfile, User } from '@/types';
+
+const ADMIN_ONLY = ['admin'] as const;
+const APPROVERS = ['admin', 'manager', 'security_team'] as const;
 
 const roles = ['admin', 'manager', 'security_team', 'analyst', 'viewer'];
 const roleLabels: Record<string, string> = {
@@ -40,6 +44,25 @@ export default function AdministrationPage() {
   const [draftSettings, setDraftSettings] = useState<AdminSettings | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
   const [draftUser, setDraftUser] = useState<UserProfileDraft | null>(null);
+  const [showCreateUser, setShowCreateUser] = useState(false);
+  const [newUser, setNewUser] = useState({ username: '', email: '', full_name: '', password: '', role: 'analyst' });
+
+  const createUserMutation = useMutation({
+    mutationFn: (payload: typeof newUser) => api.createUser(payload, token),
+    onSuccess: async (created) => {
+      await queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      // Set role if not viewer (register defaults to viewer)
+      if (newUser.role !== 'viewer') {
+        try { await api.updateUserRole(created.id, newUser.role, token); } catch {}
+        await queryClient.invalidateQueries({ queryKey: ['admin-users'] });
+      }
+      setShowCreateUser(false);
+      setNewUser({ username: '', email: '', full_name: '', password: '', role: 'analyst' });
+      toast.success(`User "${created.username}" created`);
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Failed to create user'),
+  });
+
   const [approvalReasons, setApprovalReasons] = useState<Record<string, string>>(() => {
     try {
       const stored = sessionStorage.getItem('approvalReasons');
@@ -152,6 +175,9 @@ export default function AdministrationPage() {
     onError: (error) => toast.error(error instanceof Error ? error.message : 'CVE sync failed'),
   });
 
+  const isAdmin = canAccess(currentUser?.role, ADMIN_ONLY);
+  const isApprover = canAccess(currentUser?.role, APPROVERS);
+
   const userRows = users.data ?? [];
   const profileRows = profiles.data ?? [];
   const approvalRows = approvals.data ?? [];
@@ -160,31 +186,52 @@ export default function AdministrationPage() {
   const visibleSections = adminSections.filter((section) => !hiddenCards.includes(section));
   const selectedUser = userRows.find((user) => user.id === selectedUserId) ?? null;
 
+  if (!isApprover) {
+    return (
+      <div className="flex flex-col items-center justify-center py-24 text-center">
+        <ShieldCheck className="h-12 w-12 text-slate-300 mb-4" />
+        <h2 className="text-xl font-semibold text-[#0B1F3A]">Access Denied</h2>
+        <p className="mt-2 text-sm text-slate-500">You don't have permission to view the Administration page.</p>
+      </div>
+    );
+  }
+
   function updateSection<Section extends keyof AdminSettings, FieldName extends keyof AdminSettings[Section]>(section: Section, field: FieldName, value: AdminSettings[Section][FieldName]) {
     setDraftSettings((current) => current ? { ...current, [section]: { ...current[section], [field]: value } } : current);
   }
 
   return (
     <>
-      <PageHeader title="System Administrator" description="Manage users, roles, scan profiles, platform policies, report templates, and operational settings." actions={<Button variant="outline" onClick={() => { users.refetch(); profiles.refetch(); settings.refetch(); approvals.refetch(); pendingAssetsQuery.refetch(); }}>Refresh</Button>} />
+      <PageHeader
+        title="Administration"
+        description={isAdmin ? 'Manage users, roles, scan profiles, platform policies, report templates, and operational settings.' : 'Review approval requests and asset scope decisions.'}
+        actions={
+          <div className="flex items-center gap-2">
+            <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
+              {currentUser?.role === 'admin' ? 'System Administrator' : currentUser?.role === 'manager' ? 'Manager' : 'Security Team'}
+            </span>
+            <Button variant="outline" onClick={() => { users.refetch(); profiles.refetch(); settings.refetch(); approvals.refetch(); pendingAssetsQuery.refetch(); }}>Refresh</Button>
+          </div>
+        }
+      />
       <div className="mb-6 grid gap-4 md:grid-cols-6">
-        <SummaryCard label="Users" value={String(userRows.length)} />
-        <SummaryCard label="Admins" value={String(userRows.filter((item) => item.role === 'admin').length)} />
-        <SummaryCard label="Active Users" value={String(userRows.filter((item) => item.is_active).length)} />
-        <SummaryCard label="Scan Profiles" value={String(profileRows.length)} />
+        {isAdmin && <SummaryCard label="Users" value={String(userRows.length)} />}
+        {isAdmin && <SummaryCard label="Admins" value={String(userRows.filter((item) => item.role === 'admin').length)} />}
+        {isAdmin && <SummaryCard label="Active Users" value={String(userRows.filter((item) => item.is_active).length)} />}
+        {isAdmin && <SummaryCard label="Scan Profiles" value={String(profileRows.length)} />}
         <SummaryCard label="Pending Assets" value={String(pendingAssetRows.length)} highlight={pendingAssetRows.length > 0} />
         <SummaryCard label="Pending Approvals" value={String(pendingApprovals.length)} highlight={pendingApprovals.length > 0} />
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Card>
-          <CardHeader><div className="flex items-center gap-2"><Users className="h-5 w-5 text-[#155EEF]" /><h2 className="font-semibold">Users and Roles</h2></div></CardHeader>
+        {isAdmin && <Card>
+          <CardHeader><div className="flex items-center justify-between gap-2"><div className="flex items-center gap-2"><Users className="h-5 w-5 text-[#155EEF]" /><h2 className="font-semibold">Users and Roles</h2></div><Button onClick={() => setShowCreateUser(true)}><Plus className="h-4 w-4" /> Create User</Button></div></CardHeader>
           <CardContent><DataTable<User> data={userRows} columns={[{ key: 'email', header: 'User', render: (user) => <div><p className="font-semibold text-[#0B1F3A]">{user.full_name ?? user.email}</p><p className="text-xs text-slate-500">{user.email}</p></div> }, { key: 'role', header: 'Role', render: (user) => <Select value={user.role} onChange={(event) => roleMutation.mutate({ userId: user.id, role: event.target.value })} disabled={roleMutation.isPending || user.id === currentUser?.id} className="min-w-48">{roles.map((role) => <option key={role} value={role}>{roleLabels[role] ?? role}</option>)}</Select> }, { key: 'active', header: 'Active', render: (user) => <StatusBadge value={user.is_active ? 'active' : 'disabled'} /> }, { key: 'profile', header: 'Profile', render: (user) => <Button variant={user.id === selectedUserId ? 'secondary' : 'outline'} onClick={() => setSelectedUserId(user.id)}>Profile</Button> }]} /></CardContent>
-        </Card>
-        <Card>
+        </Card>}
+        {isAdmin && <Card>
           <CardHeader><div className="flex items-center gap-2"><ShieldCheck className="h-5 w-5 text-[#155EEF]" /><h2 className="font-semibold">Scan Profiles</h2></div></CardHeader>
           <CardContent><DataTable<ScanProfile> data={profileRows} columns={[{ key: 'name', header: 'Profile', render: (profile) => <div><p className="font-semibold text-[#0B1F3A]">{profile.name}</p><p className="text-xs text-slate-500">{profile.description ?? 'Operational scan profile.'}</p></div> }, { key: 'category', header: 'Category', render: (profile) => profile.category }, { key: 'depth', header: 'Depth', render: (profile) => profile.depth }, { key: 'run_policy', header: 'Run Policy', render: () => <StatusBadge value="standard" /> }]} /></CardContent>
-        </Card>
+        </Card>}
       </div>
 
       <Card className="mt-6">
@@ -287,7 +334,7 @@ export default function AdministrationPage() {
         </CardContent>
       </Card>
 
-      <Card className="mt-6">
+      {isAdmin && <Card className="mt-6">
         <CardHeader><div className="flex items-center justify-between gap-3"><div className="flex items-center gap-2"><Users className="h-5 w-5 text-[#155EEF]" /><h2 className="font-semibold">User Profile</h2></div>{selectedUser ? <StatusBadge value={selectedUser.is_active ? 'active' : 'disabled'} /> : null}</div></CardHeader>
         <CardContent>
           {draftUser && selectedUser ? <div className="grid gap-4 lg:grid-cols-[1fr_280px]">
@@ -309,9 +356,9 @@ export default function AdministrationPage() {
             </div>
           </div> : <p className="text-sm text-slate-600">No user profile selected.</p>}
         </CardContent>
-      </Card>
+      </Card>}
 
-      <div className="mt-6 flex items-center justify-between gap-3">
+      {isAdmin && <><div className="mt-6 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold text-[#0B1F3A]">Administrative Feature Controls</h2>
           <p className="text-sm text-slate-600">These settings are saved to the platform audit trail and reloaded for administrators.</p>
@@ -358,6 +405,37 @@ export default function AdministrationPage() {
       </div> : null}
 
       {hiddenCards.length ? <Button className="mt-4" variant="outline" onClick={() => setHiddenCards([])}>Show Closed Cards</Button> : null}
+      </>}
+
+      {showCreateUser && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="w-full max-w-md rounded-xl border border-slate-200 bg-white p-6 shadow-xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-semibold text-[#0B1F3A]">Create New User</h3>
+              <button type="button" onClick={() => setShowCreateUser(false)} className="rounded-full border border-slate-200 p-1 text-slate-500 hover:bg-slate-50"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="space-y-3">
+              <Field label="Full name"><Input value={newUser.full_name} onChange={(e) => setNewUser((p) => ({ ...p, full_name: e.target.value }))} placeholder="Jane Smith" /></Field>
+              <Field label="Username"><Input value={newUser.username} onChange={(e) => setNewUser((p) => ({ ...p, username: e.target.value }))} placeholder="jsmith" /></Field>
+              <Field label="Email"><Input type="email" value={newUser.email} onChange={(e) => setNewUser((p) => ({ ...p, email: e.target.value }))} placeholder="jane@example.com" /></Field>
+              <Field label="Password"><Input type="password" value={newUser.password} onChange={(e) => setNewUser((p) => ({ ...p, password: e.target.value }))} placeholder="Min 12 characters" /></Field>
+              <Field label="Role">
+                <Select value={newUser.role} onChange={(e) => setNewUser((p) => ({ ...p, role: e.target.value }))}>
+                  {roles.map((r) => <option key={r} value={r}>{roleLabels[r] ?? r}</option>)}
+                </Select>
+                <p className="mt-1 text-xs text-slate-500">{roleDescriptions[newUser.role]}</p>
+              </Field>
+            </div>
+            <div className="mt-5 flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setShowCreateUser(false)}>Cancel</Button>
+              <Button
+                disabled={createUserMutation.isPending || !newUser.username || !newUser.email || !newUser.password}
+                onClick={() => createUserMutation.mutate(newUser)}
+              >{createUserMutation.isPending ? 'Creating...' : 'Create User'}</Button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {confirmDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
