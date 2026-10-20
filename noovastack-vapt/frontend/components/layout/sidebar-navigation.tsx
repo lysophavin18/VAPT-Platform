@@ -48,7 +48,7 @@ export function SidebarNavigation({
   return (
     <aside
       className={cn(
-        'flex h-full flex-col bg-[#0F1C2E] transition-all duration-200',
+        'sidebar-shell flex h-full flex-col border-r border-slate-200 bg-white text-slate-600 transition-all duration-200 dark:border-transparent dark:bg-[#0F1C2E]',
         collapsed ? 'w-[60px]' : mobile ? 'w-[220px]' : 'w-[220px] xl:w-[240px]'
       )}
     >
@@ -56,7 +56,7 @@ export function SidebarNavigation({
       <Link
         href="/dashboard"
         className={cn(
-          'flex h-16 shrink-0 items-center border-b border-white/10 px-4 gap-3',
+          'flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 px-4 dark:border-white/10',
         )}
         aria-label={BRAND.productName}
       >
@@ -68,8 +68,8 @@ export function SidebarNavigation({
         />
         {!collapsed && (
           <div className="min-w-0">
-            <p className="truncate text-sm font-bold text-white">{BRAND.shortName}</p>
-            <p className="truncate text-[11px] font-medium text-white/50">{BRAND.productDescriptor}</p>
+            <p className="sidebar-brand-title truncate text-sm font-bold text-slate-900 dark:text-white">{BRAND.shortName}</p>
+            <p className="sidebar-brand-subtitle truncate text-[11px] font-medium text-slate-500 dark:text-white/50">{BRAND.productDescriptor}</p>
           </div>
         )}
       </Link>
@@ -81,7 +81,7 @@ export function SidebarNavigation({
           return (
             <div key={item.href ?? item.label}>
               {sectionLabel && (
-                <p className="mb-1 mt-3 px-3 text-[10px] font-semibold uppercase tracking-widest text-white/30">
+                <p className="mb-1 mt-3 px-3 text-[10px] font-semibold uppercase tracking-widest text-slate-400 dark:text-white/30">
                   {sectionLabel}
                 </p>
               )}
@@ -108,7 +108,7 @@ export function SidebarNavigation({
 
       {/* Footer — admin */}
       {adminItem && (
-        <div className="shrink-0 border-t border-white/10 px-2 py-3">
+        <div className="shrink-0 border-t border-slate-200 px-2 py-3 dark:border-white/10">
           <SidebarLink
             item={adminItem}
             active={pathname === adminItem.href}
@@ -160,9 +160,9 @@ function SidebarAccordion({
         <span className="flex-1 truncate text-left text-[13px]">{item.label}</span>
         <ChevronRight
           className={cn(
-            'h-3.5 w-3.5 shrink-0 text-white/30 transition-transform',
+            'h-3.5 w-3.5 shrink-0 text-slate-400 transition-transform dark:text-white/30',
             open && 'rotate-90',
-            anyActive && 'text-white/60',
+            anyActive && 'text-[#0B5E9E] dark:text-white/60',
           )}
         />
       </button>
@@ -229,8 +229,8 @@ function ChildLink({
       className={cn(
         'flex h-8 items-center rounded-md px-2.5 text-[12px] transition-colors',
         active
-          ? 'bg-white/10 font-semibold text-white'
-          : 'font-medium text-white/50 hover:bg-white/5 hover:text-white/80',
+          ? 'bg-blue-50 font-semibold text-[#0B5E9E] dark:bg-white/10 dark:text-white'
+          : 'font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-900 dark:text-white/50 dark:hover:bg-white/5 dark:hover:text-white/80',
       )}
     >
       {active && (
@@ -253,7 +253,7 @@ function NavIcon({
     <Icon
       className={cn(
         'h-[17px] w-[17px] shrink-0 transition-colors',
-        active ? 'text-[#60A5FA]' : 'text-white/40 group-hover:text-white/70',
+        active ? 'text-[#0B70C9] dark:text-[#60A5FA]' : 'text-slate-400 group-hover:text-slate-700 dark:text-white/40 dark:group-hover:text-white/70',
       )}
     />
   );
@@ -265,8 +265,8 @@ function navItemClass(active: boolean, collapsed: boolean) {
     'group flex h-9 w-full items-center rounded-lg transition-colors',
     collapsed ? 'justify-center px-2' : 'gap-2.5 px-3',
     active
-      ? 'bg-white/10 font-semibold text-white'
-      : 'font-medium text-white/55 hover:bg-white/5 hover:text-white/90',
+      ? 'bg-blue-50 font-semibold text-[#0B5E9E] dark:bg-white/10 dark:text-white'
+      : 'font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900 dark:text-white/55 dark:hover:bg-white/5 dark:hover:text-white/90',
   );
 }
 

@@ -366,6 +366,24 @@ class FindingStatusUpdate(BaseModel):
     status: str = Field(pattern="^(confirmed|ready_for_retest|retesting|fixed|partially_fixed|not_fixed|cannot_verify|risk_accepted|false_positive|rejected)$")
 
 
+class FindingCommentCreate(BaseModel):
+    body: str = Field(min_length=1, max_length=4000)
+    comment_type: str = Field(default="comment", pattern="^(comment|remediation|question)$")
+
+
+class FindingCommentResponse(BaseModel):
+    id: UUID
+    finding_id: UUID
+    author_id: Optional[UUID]
+    author_name: Optional[str]
+    body: str
+    comment_type: str
+    created_at: Optional[datetime]
+    updated_at: Optional[datetime]
+
+    model_config = {"from_attributes": True}
+
+
 # ── Approval ──
 class ApprovalResponse(BaseModel):
     id: UUID

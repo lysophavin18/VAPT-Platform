@@ -1,0 +1,2 @@
+file '/home/sophavin/Desktop/VAPT-Platform/promo-video/marketing-preview-build/part-4-0.mp4'
+file '/home/sophavin/Desktop/VAPT-Platform/promo-video/marketing-preview-build/part-4-1.mp4'

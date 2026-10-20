@@ -1,5 +1,16 @@
 export type Severity = 'critical' | 'high' | 'medium' | 'low' | 'informational' | 'info';
 
+export interface FindingComment {
+  id: string;
+  finding_id: string;
+  author_id?: string | null;
+  author_name?: string | null;
+  body: string;
+  comment_type: 'comment' | 'remediation' | 'question';
+  created_at?: string | null;
+  updated_at?: string | null;
+}
+
 export interface Evidence {
   id: string;
   evidence_type: string;

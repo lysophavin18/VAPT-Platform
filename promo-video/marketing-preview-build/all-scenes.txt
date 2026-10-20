@@ -1,0 +1,7 @@
+file '/home/sophavin/Desktop/VAPT-Platform/promo-video/marketing-preview-build/scene-0.mp4'
+file '/home/sophavin/Desktop/VAPT-Platform/promo-video/marketing-preview-build/scene-1.mp4'
+file '/home/sophavin/Desktop/VAPT-Platform/promo-video/marketing-preview-build/scene-2.mp4'
+file '/home/sophavin/Desktop/VAPT-Platform/promo-video/marketing-preview-build/scene-3.mp4'
+file '/home/sophavin/Desktop/VAPT-Platform/promo-video/marketing-preview-build/scene-4.mp4'
+file '/home/sophavin/Desktop/VAPT-Platform/promo-video/marketing-preview-build/scene-5.mp4'
+file '/home/sophavin/Desktop/VAPT-Platform/promo-video/marketing-preview-build/scene-6.mp4'

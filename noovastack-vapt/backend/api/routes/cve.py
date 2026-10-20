@@ -1,10 +1,9 @@
 """CVE database sync and lookup routes."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime
 from typing import Any
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -42,52 +41,11 @@ async def sync_cve_database(
     admin: User = Depends(require_admin),
 ):
     state = await _get_state(db)
-    state.status = "running"
-    state.last_sync_at = datetime.utcnow()
-    state.error = None
-    await db.commit()
-
-    try:
-        end = datetime.now(timezone.utc)
-        start = end - timedelta(days=days)
-        params = {
-            "pubStartDate": _nvd_date(start),
-            "pubEndDate": _nvd_date(end),
-            "resultsPerPage": max_results,
-            "startIndex": 0,
-        }
-        async with httpx.AsyncClient(timeout=45.0, follow_redirects=True) as client:
-            response = await client.get(NVD_URL, params=params)
-            response.raise_for_status()
-            payload = response.json()
-
-        synced = 0
-        for item in payload.get("vulnerabilities") or []:
-            cve_data = item.get("cve") or {}
-            cve_id = cve_data.get("id")
-            if not cve_id:
-                continue
-            record = await db.get(CVERecord, cve_id)
-            parsed = _parse_nvd_cve(cve_data)
-            if not record:
-                record = CVERecord(id=cve_id)
-                db.add(record)
-            for key, value in parsed.items():
-                setattr(record, key, value)
-            synced += 1
-
-        state.status = "success"
-        state.last_success_at = datetime.utcnow()
-        state.records_synced = synced
-        state.metadata_json = {"days": days, "max_results": max_results, "source_url": NVD_URL}
-        db.add(AuditLog(actor_id=admin.id, event_type="cve", action="cve_database_synced", details={"records_synced": synced, "days": days}))
-        await db.commit()
-        return {"status": "success", "records_synced": synced, "source": "nvd"}
-    except Exception as exc:
-        state.status = "failed"
-        state.error = str(exc)
-        await db.commit()
-        raise HTTPException(status_code=502, detail=f"CVE sync failed: {exc}")
+    if state.status == "running":
+        raise HTTPException(status_code=409, detail="CVE synchronization is already running")
+    from workers.celery_app import sync_cve_database_task
+    task = sync_cve_database_task.apply_async(args=[days, max_results, str(admin.id)])
+    return {"status": "queued", "job_id": task.id, "source": "nvd"}
 
 
 @router.get("/search")

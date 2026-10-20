@@ -6,9 +6,9 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
-from database.models import Finding, AuditLog, Project, Scan
+from database.models import Finding, FindingComment, AuditLog, Project, Scan
 from auth import get_finding_or_404, get_project_or_404, get_scan_or_404, project_access_clause, require_user, User
-from api.schemas import FindingResponse, FindingStatusUpdate
+from api.schemas import FindingCommentCreate, FindingCommentResponse, FindingResponse, FindingStatusUpdate
 
 router = APIRouter()
 
@@ -113,3 +113,59 @@ async def mark_false_positive(
     await db.commit()
     await db.refresh(finding)
     return finding
+
+
+@router.get("/{finding_id}/comments", response_model=list[FindingCommentResponse])
+async def list_comments(
+    finding_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    await get_finding_or_404(db, finding_id, current_user)
+    result = await db.execute(
+        select(FindingComment).where(FindingComment.finding_id == finding_id).order_by(FindingComment.created_at)
+    )
+    return result.scalars().all()
+
+
+@router.post("/{finding_id}/comments", response_model=FindingCommentResponse, status_code=201)
+async def add_comment(
+    finding_id: str,
+    data: FindingCommentCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    await get_finding_or_404(db, finding_id, current_user)
+    comment = FindingComment(
+        finding_id=finding_id,
+        author_id=current_user.id,
+        author_name=current_user.full_name or current_user.username,
+        body=data.body,
+        comment_type=data.comment_type,
+    )
+    db.add(comment)
+    await db.commit()
+    await db.refresh(comment)
+    return comment
+
+
+@router.delete("/{finding_id}/comments/{comment_id}", status_code=204)
+async def delete_comment(
+    finding_id: str,
+    comment_id: str,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(require_user),
+):
+    result = await db.execute(
+        select(FindingComment).where(
+            FindingComment.id == comment_id,
+            FindingComment.finding_id == finding_id,
+        )
+    )
+    comment = result.scalar_one_or_none()
+    if not comment:
+        raise HTTPException(status_code=404, detail="Comment not found")
+    if str(comment.author_id) != str(current_user.id) and current_user.role not in ("admin", "manager"):
+        raise HTTPException(status_code=403, detail="Cannot delete another user's comment")
+    await db.delete(comment)
+    await db.commit()

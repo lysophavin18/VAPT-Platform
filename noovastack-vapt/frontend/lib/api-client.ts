@@ -1,4 +1,4 @@
-import type { Approval, Asset, AssetGraph, AssetGroup, DashboardMetricsResponse, DashboardPanelsResponse, DashboardTimeseriesResponse, DiscoveryJobStatus, DomainMonitor, DomainMonitorEvent, Engagement, Finding, Project, ReportAIImprovements, Scan, ScanEvent, ScanEvidencePayload, ScanModule, ScanProcessPayload, ScanProgressPayload, ScanProfile, ScanResultsPayload, ScanSafetyState, ScanSchedule, ScanValidationResult, User, VulnerabilityAssessmentReport } from '@/types';
+import type { Approval, Asset, AssetGraph, AssetGroup, DashboardMetricsResponse, DashboardPanelsResponse, DashboardTimeseriesResponse, DiscoveryJobStatus, DomainMonitor, DomainMonitorEvent, Engagement, Finding, FindingComment, Project, ReportAIImprovements, Scan, ScanEvent, ScanEvidencePayload, ScanModule, ScanProcessPayload, ScanProgressPayload, ScanProfile, ScanResultsPayload, ScanSafetyState, ScanSchedule, ScanValidationResult, User, VulnerabilityAssessmentReport } from '@/types';
 
 export interface APITokenResponse {
   id: string;
@@ -244,6 +244,10 @@ export const api = {
   scanProfiles: (token?: string | null) => request<ScanProfile[]>('/admin/scan-profiles', { token }),
   scanCatalog: (token?: string | null) => request<ScanProfile[]>('/scans/catalog', { token }),
   users: (token?: string | null) => request<User[]>('/admin/users', { token }),
+  createUser: (payload: { username: string; email: string; full_name: string; password: string; role: string }, token?: string | null) => request<User>('/auth/register', { method: 'POST', body: JSON.stringify(payload), token }),
+  findingComments: (findingId: string, token?: string | null) => request<FindingComment[]>(`/findings/${findingId}/comments`, { token }),
+  addFindingComment: (findingId: string, body: string, comment_type: string, token?: string | null) => request<FindingComment>(`/findings/${findingId}/comments`, { method: 'POST', body: JSON.stringify({ body, comment_type }), token }),
+  deleteFindingComment: (findingId: string, commentId: string, token?: string | null) => request<void>(`/findings/${findingId}/comments/${commentId}`, { method: 'DELETE', token }),
   updateUserRole: (userId: string, role: string, token?: string | null) => request<{ message: string }>(`/admin/users/${userId}/role?role=${encodeURIComponent(role)}`, { method: 'PATCH', token }),
   updateUserProfile: (userId: string, payload: Pick<User, 'email' | 'username' | 'full_name' | 'role'> & { is_active: boolean }, token?: string | null) => request<User>(`/admin/users/${userId}/profile`, { method: 'PATCH', body: JSON.stringify(payload), token }),
   adminSettings: (token?: string | null) => request<AdminSettings>('/admin/settings', { token }),
