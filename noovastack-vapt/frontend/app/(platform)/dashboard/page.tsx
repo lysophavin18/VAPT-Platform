@@ -46,6 +46,14 @@ import type { Asset, DashboardMetric, Project, TimeSeries } from '@/types';
 
 const defaults: DashboardFilters = { project_id: 'all', environment: 'all', asset_id: 'all', scan_type: 'all', severity: 'all', status: 'all', range: '30d', refresh: '30s' };
 const refreshMs: Record<string, false | number> = { off: false, '5s': 5000, '10s': 10000, '30s': 30000, '1m': 60000, '5m': 300000, '15m': 900000 };
+type AnalyticsView = 'risk' | 'scanning' | 'remediation' | 'operations';
+
+const analyticsViews: Array<{ id: AnalyticsView; label: string; question: string; icon: typeof ShieldCheck; adminOnly?: boolean }> = [
+  { id: 'risk', label: 'Risk overview', question: 'Where are we exposed?', icon: ShieldCheck },
+  { id: 'scanning', label: 'Scan health', question: 'Are scans working?', icon: Radar },
+  { id: 'remediation', label: 'Fix progress', question: 'Are risks being resolved?', icon: ClipboardCheck },
+  { id: 'operations', label: 'Platform operations', question: 'Is the platform healthy?', icon: FolderKanban, adminOnly: true },
+];
 
 export default function DashboardPage() {
   const { token, user } = useAuth();
@@ -57,6 +65,7 @@ export default function DashboardPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [liveStatus, setLiveStatus] = useState('Connected');
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [analyticsView, setAnalyticsView] = useState<AnalyticsView>('risk');
   const filters = useMemo(() => readFilters(params), [params]);
   const query = useMemo(() => `?${new URLSearchParams(filters).toString()}`, [filters]);
   const interval = autoRefresh ? refreshMs[filters.refresh] : false;
@@ -128,7 +137,7 @@ export default function DashboardPage() {
         >
           <div>
             <p className="font-semibold text-[#0B1F3A] dark:text-[#F1F5F9]">Detailed analytics</p>
-            <p className="mt-1 text-sm text-slate-600 dark:text-[#94A3B8]">Trends, heatmaps, SLA tracking, and the full operational breakdown for deeper analysis.</p>
+            <p className="mt-1 text-sm text-slate-600 dark:text-[#94A3B8]">Focused views for risk, scan health, remediation progress, and platform operations.</p>
           </div>
           {showAdvanced ? <ChevronUp className="h-5 w-5 shrink-0 text-slate-500" /> : <ChevronDown className="h-5 w-5 shrink-0 text-slate-500" />}
         </button>
@@ -136,49 +145,88 @@ export default function DashboardPage() {
 
       {showAdvanced ? (
       <GrafanaStyleDashboard>
+        <div className="mb-4 rounded-2xl border border-[#DCE3EA] bg-white p-4 shadow-soft dark:border-[#2A394D] dark:bg-[#121C2B] sm:p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-bold uppercase tracking-[0.16em] text-[#155EEF] dark:text-[#8CCCF0]">Analysis workspace</p>
+              <h2 className="mt-1 text-xl font-bold text-[#0B1F3A] dark:text-[#F1F5F9]">Choose what you need to understand</h2>
+              <p className="mt-1 text-sm text-slate-600 dark:text-[#94A3B8]">Each view answers one operational question and keeps unrelated charts out of the way.</p>
+            </div>
+            <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-semibold text-emerald-700 dark:bg-[#123024] dark:text-emerald-300">Live data · {liveStatus}</span>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4" role="tablist" aria-label="Analytics views">
+            {analyticsViews.filter((view) => !view.adminOnly || user?.role === 'admin').map((view) => {
+              const Icon = view.icon;
+              const selected = analyticsView === view.id;
+              return (
+                <button key={view.id} type="button" role="tab" aria-selected={selected} onClick={() => setAnalyticsView(view.id)} className={`flex items-center gap-3 rounded-xl border p-3 text-left transition ${selected ? 'border-[#155EEF] bg-[#EAF2FF] text-[#0B5E9E] shadow-sm dark:border-[#49A6DF] dark:bg-[#143A5A] dark:text-[#D9F1FF]' : 'border-[#DCE3EA] bg-white text-[#344054] hover:border-[#155EEF]/50 hover:bg-slate-50 dark:border-[#2A394D] dark:bg-[#121C2B] dark:text-[#D7E1ED] dark:hover:bg-[#172638]'}`}>
+                  <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-lg ${selected ? 'bg-white text-[#155EEF] dark:bg-[#102A43] dark:text-[#8CCCF0]' : 'bg-slate-100 text-slate-500 dark:bg-[#1A293C] dark:text-[#94A3B8]'}`}><Icon className="h-5 w-5" /></span>
+                  <span><span className="block text-sm font-bold">{view.label}</span><span className="mt-0.5 block text-xs opacity-75">{view.question}</span></span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
         <DashboardToolbar filters={filters} onChange={updateFilters} onRefresh={refreshAll} lastRefreshed={lastRefresh ? relativeTime(lastRefresh) : 'not yet'} liveStatus={liveStatus} autoRefresh={autoRefresh} onAutoRefreshChange={setAutoRefresh} projects={(projects.data ?? []) as Project[]} assets={allAssets.data ?? []} />
         {isPending ? <div className="mb-3 rounded-xl border border-[#DCE3EA] bg-white px-3 py-2 text-sm text-[#667085] shadow-soft dark:border-[#2A394D] dark:bg-[#121C2B] dark:text-[#B3C0D1]">Updating dashboard filters...</div> : null}
 
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-          {(metrics.data?.metrics ?? fallbackMetrics()).map((metric: DashboardMetric) => <StatPanel key={metric.key} metric={metric} />)}
+        <div className="mb-4 flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-bold text-[#0B1F3A] dark:text-[#F1F5F9]">{analyticsViews.find((view) => view.id === analyticsView)?.label}</h2>
+            <p className="text-sm text-slate-600 dark:text-[#94A3B8]">{analyticsViewDescription(analyticsView)}</p>
+          </div>
+          <p className="text-xs text-slate-500">Showing only the most useful panels for this view</p>
         </div>
 
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          {analyticsMetrics(metrics.data?.metrics ?? fallbackMetrics(), analyticsView).map((metric: DashboardMetric) => <StatPanel key={metric.key} metric={metric} />)}
+        </div>
+
+        {analyticsView === 'risk' ? (
         <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
           <div className="xl:col-span-12"><DashboardPanel title="Security Posture Over Time" description="Security score, asset coverage, remediation completion, and verified finding rate with zoom brush and threshold reference." href="/findings" isLoading={timeseries.isLoading} error={timeseries.error} data={timeseries.data} onRefresh={() => timeseries.refetch()}><SecurityPosturePanel data={postureSeries} /></DashboardPanel></div>
 
           <div className="xl:col-span-8"><DashboardPanel title="Findings Trend" description="New, verified, fixed, reopened, and rejected findings grouped by the selected interval." href="/findings" isLoading={timeseries.isLoading} error={timeseries.error} data={timeseries.data?.findings} onRefresh={() => timeseries.refetch()}><FindingTrendPanel series={timeseries.data?.findings ?? []} /></DashboardPanel></div>
           <div className="xl:col-span-4"><DashboardPanel title="Severity Distribution" description="Current finding distribution with verified, flagged, and fixed counts." href="/findings" isLoading={panels.isLoading} error={panels.error} empty={!panelData.severity_distribution?.total} data={panelData.severity_distribution} onRefresh={() => panels.refetch()}><DonutPanel counts={panelData.severity_distribution?.counts ?? {}} total={panelData.severity_distribution?.total ?? 0} /><div className="mt-3 grid grid-cols-3 gap-2 text-xs text-[#667085] dark:text-[#B3C0D1]"><span>Verified: {panelData.severity_distribution?.verified ?? 0}</span><span>Flagged: {panelData.severity_distribution?.flagged ?? 0}</span><span>Fixed: {panelData.severity_distribution?.fixed ?? 0}</span></div></DashboardPanel></div>
 
-          <div className="xl:col-span-8"><DashboardPanel title="Scan Throughput" description="Started, completed, failed, blocked, and cancelled scans across the selected time range." href="/scans" isLoading={timeseries.isLoading} error={timeseries.error} data={timeseries.data?.scans} onRefresh={() => timeseries.refetch()}><ScanThroughputPanel series={timeseries.data?.scans ?? []} /></DashboardPanel></div>
-          <div className="xl:col-span-4"><DashboardPanel title="Scan Success Rate" description="Completion health against administrator-configurable green and amber thresholds." href="/scans" isLoading={panels.isLoading} error={panels.error} data={panelData.scan_success_rate} onRefresh={() => panels.refetch()}><GaugePanel value={panelData.scan_success_rate?.rate ?? 100} thresholds={panelData.scan_success_rate?.thresholds} /><TablePanel rows={[panelData.scan_success_rate ?? {}]} columns={[{ key: 'successful', header: 'Successful' }, { key: 'failed', header: 'Failed' }, { key: 'blocked', header: 'Blocked' }, { key: 'cancelled', header: 'Cancelled' }]} /></DashboardPanel></div>
-
-          <div className="xl:col-span-4"><DashboardPanel title="Approvals" description="Pending, approved, rejected, and expiring Security Team review requests." href="/approvals" isLoading={panels.isLoading} error={panels.error} data={panelData.approvals} onRefresh={() => panels.refetch()}><ApprovalMetricsPanel panel={panelData.approvals ?? {}} /></DashboardPanel></div>
-
-          <div className="xl:col-span-8"><DashboardPanel title="Active Scan Progress" description="Current scan stages, progress, elapsed time, ETA, candidate findings, and evidence count." href="/scans" isLoading={panels.isLoading} error={panels.error} empty={!panelData.active_scans?.rows?.length} data={panelData.active_scans} onRefresh={() => panels.refetch()}><ActiveScanPanel rows={panelData.active_scans?.rows ?? []} /></DashboardPanel></div>
-          <div className="xl:col-span-4"><DashboardPanel title="Scan Duration" description="Duration percentiles identify slow or stalled workflows by scan category." href="/scans" isLoading={panels.isLoading} error={panels.error} data={panelData.scan_duration} onRefresh={() => panels.refetch()}><TablePanel rows={[panelData.scan_duration ?? {}]} columns={[{ key: 'average', header: 'Avg' }, { key: 'p50', header: 'P50' }, { key: 'p75', header: 'P75' }, { key: 'p90', header: 'P90' }, { key: 'p95', header: 'P95' }, { key: 'maximum', header: 'Max' }]} /></DashboardPanel></div>
-
           <div className="xl:col-span-8"><DashboardPanel title="Highest-Risk Assets" description="Sortable risk candidates calculated from verified severity and scan coverage." href="/assets" isLoading={panels.isLoading} error={panels.error} empty={!panelData.highest_risk_assets?.rows?.length} data={panelData.highest_risk_assets} onRefresh={() => panels.refetch()}><AssetRiskPanel rows={panelData.highest_risk_assets?.rows ?? []} /></DashboardPanel></div>
-          <div className="xl:col-span-4"><DashboardPanel title="Asset Scan Coverage" description="Approved assets scanned recently, stale coverage, pending approval, and inactive inventory." href="/assets" isLoading={panels.isLoading} error={panels.error} data={panelData.asset_coverage} onRefresh={() => panels.refetch()}><AssetCoveragePanel panel={panelData.asset_coverage ?? { rows: [], percentage: 0 }} /></DashboardPanel></div>
-
-          <div className="xl:col-span-8"><DashboardPanel title="OWASP Risk Heatmap" description="Verified finding intensity by OWASP category and project. Cells drill down to Findings." href="/findings" isLoading={panels.isLoading} error={panels.error} empty={!panelData.owasp_heatmap?.rows?.length} data={panelData.owasp_heatmap} onRefresh={() => panels.refetch()}><HeatmapPanel rows={panelData.owasp_heatmap?.rows ?? []} /></DashboardPanel></div>
           <div className="xl:col-span-4"><DashboardPanel title="Top Vulnerability Categories" description="Category ranking by finding count, affected assets, and previous-period change." href="/findings" isLoading={panels.isLoading} error={panels.error} empty={!panelData.top_vulnerability_categories?.rows?.length} data={panelData.top_vulnerability_categories} onRefresh={() => panels.refetch()}><TopVulnerabilityCategoriesPanel rows={panelData.top_vulnerability_categories?.rows ?? []} /></DashboardPanel></div>
+          <div className="xl:col-span-12"><DashboardPanel title="OWASP Risk Heatmap" description="Verified finding intensity by OWASP category and project. Cells drill down to Findings." href="/findings" isLoading={panels.isLoading} error={panels.error} empty={!panelData.owasp_heatmap?.rows?.length} data={panelData.owasp_heatmap} onRefresh={() => panels.refetch()}><HeatmapPanel rows={panelData.owasp_heatmap?.rows ?? []} /></DashboardPanel></div>
+        </div>
+        ) : null}
 
+        {analyticsView === 'scanning' ? (
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="xl:col-span-8"><DashboardPanel title="Active Scan Progress" description="Current scan stages, progress, elapsed time, ETA, candidate findings, and evidence count." href="/scans" isLoading={panels.isLoading} error={panels.error} empty={!panelData.active_scans?.rows?.length} data={panelData.active_scans} onRefresh={() => panels.refetch()}><ActiveScanPanel rows={panelData.active_scans?.rows ?? []} /></DashboardPanel></div>
+          <div className="xl:col-span-4"><DashboardPanel title="Scan Success Rate" description="Completion health against administrator-configurable green and amber thresholds." href="/scans" isLoading={panels.isLoading} error={panels.error} data={panelData.scan_success_rate} onRefresh={() => panels.refetch()}><GaugePanel value={panelData.scan_success_rate?.rate ?? 100} thresholds={panelData.scan_success_rate?.thresholds} /><TablePanel rows={[panelData.scan_success_rate ?? {}]} columns={[{ key: 'successful', header: 'Successful' }, { key: 'failed', header: 'Failed' }, { key: 'blocked', header: 'Blocked' }, { key: 'cancelled', header: 'Cancelled' }]} /></DashboardPanel></div>
+          <div className="xl:col-span-8"><DashboardPanel title="Scan Throughput" description="Started, completed, failed, blocked, and cancelled scans across the selected time range." href="/scans" isLoading={timeseries.isLoading} error={timeseries.error} data={timeseries.data?.scans} onRefresh={() => timeseries.refetch()}><ScanThroughputPanel series={timeseries.data?.scans ?? []} /></DashboardPanel></div>
+          <div className="xl:col-span-4"><DashboardPanel title="Asset Scan Coverage" description="Approved assets scanned recently, stale coverage, pending approval, and inactive inventory." href="/assets" isLoading={panels.isLoading} error={panels.error} data={panelData.asset_coverage} onRefresh={() => panels.refetch()}><AssetCoveragePanel panel={panelData.asset_coverage ?? { rows: [], percentage: 0 }} /></DashboardPanel></div>
+          <div className="xl:col-span-12"><DashboardPanel title="Scan Duration" description="Duration percentiles identify slow or stalled workflows by scan category." href="/scans" isLoading={panels.isLoading} error={panels.error} data={panelData.scan_duration} onRefresh={() => panels.refetch()}><TablePanel rows={[panelData.scan_duration ?? {}]} columns={[{ key: 'average', header: 'Avg' }, { key: 'p50', header: 'P50' }, { key: 'p75', header: 'P75' }, { key: 'p90', header: 'P90' }, { key: 'p95', header: 'P95' }, { key: 'maximum', header: 'Max' }]} /></DashboardPanel></div>
+        </div>
+        ) : null}
+
+        {analyticsView === 'remediation' ? (
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
           <div className="xl:col-span-4"><DashboardPanel title="Remediation Status" description="Open, in-progress, retest-ready, fixed, accepted, and overdue findings." href="/findings" isLoading={panels.isLoading} error={panels.error} data={panelData.remediation} onRefresh={() => panels.refetch()}><RemediationPanel panel={panelData.remediation ?? {}} /></DashboardPanel></div>
           <div className="xl:col-span-4"><DashboardPanel title="Mean Time to Remediate" description="MTTR trend placeholder is aggregated from current remediation records as data accumulates." href="/findings" isLoading={timeseries.isLoading} error={timeseries.error} data={timeseries.data?.findings} onRefresh={() => timeseries.refetch()}><TimeSeriesPanel series={deriveMttr(timeseries.data?.findings ?? [])} height={260} /></DashboardPanel></div>
           <div className="xl:col-span-4"><DashboardPanel title="SLA Compliance" description="Within SLA, due soon, overdue, and breached counts using severity-based workflow thresholds." href="/findings" isLoading={panels.isLoading} error={panels.error} data={panelData.remediation} onRefresh={() => panels.refetch()}><TablePanel rows={[{ within_sla: Math.max(0, (panelData.remediation?.open ?? 0) - (panelData.remediation?.overdue ?? 0)), due_soon: panelData.remediation?.ready_for_retest ?? 0, overdue: panelData.remediation?.overdue ?? 0, sla_breached: panelData.remediation?.overdue ?? 0 }]} columns={[{ key: 'within_sla', header: 'Within SLA' }, { key: 'due_soon', header: 'Due Soon' }, { key: 'overdue', header: 'Overdue' }, { key: 'sla_breached', header: 'Breached' }]} /></DashboardPanel></div>
-
-          <div className="xl:col-span-4"><DashboardPanel title="Generative AI Automation Status" description="Registered, running, idle, approval-gated, failed, blocked, and offline automation states." href="/ai-agents" isLoading={panels.isLoading} error={panels.error} data={panelData.ai_agents} onRefresh={() => panels.refetch()}><AIAgentMetricsPanel panel={panelData.ai_agents ?? {}} /></DashboardPanel></div>
-          <div className="xl:col-span-4"><DashboardPanel title="Automation Task Throughput" description="Task activity inferred from local Generative AI automation workflow events and active security operations." href="/ai-agents" isLoading={timeseries.isLoading} error={timeseries.error} data={timeseries.data?.scans} onRefresh={() => timeseries.refetch()}><TimeSeriesPanel series={deriveAiThroughput(timeseries.data?.scans ?? [])} height={260} /></DashboardPanel></div>
-          <div className="xl:col-span-4"><DashboardPanel title="Automation Safety Top 10" description="Compact safety-control status for local automation risks and policy enforcement events." href="/ai-agents" isLoading={panels.isLoading} error={panels.error} data={panelData.agentic_safety} onRefresh={() => panels.refetch()}><AgenticSafetyPanel rows={panelData.agentic_safety?.rows ?? []} /></DashboardPanel></div>
-
-          <div className="xl:col-span-6"><DashboardPanel title="Evidence Processing" description="Pipeline from raw observations through report inclusion, with backlog and redaction metrics." href="/reports" isLoading={panels.isLoading} error={panels.error} data={panelData.evidence_pipeline} onRefresh={() => panels.refetch()}><EvidencePipelinePanel panel={panelData.evidence_pipeline ?? { rows: [] }} /></DashboardPanel></div>
           <div className="xl:col-span-6"><DashboardPanel title="Findings Validation Funnel" description="Conversion from raw observations to candidate, evidence-valid, verified, reportable, and fixed findings." href="/findings" isLoading={panels.isLoading} error={panels.error} data={panelData.validation_funnel} onRefresh={() => panels.refetch()}><ValidationFunnelPanel rows={panelData.validation_funnel?.rows ?? []} /></DashboardPanel></div>
-
-          {user?.role === 'admin' ? <div className="xl:col-span-12"><DashboardPanel title="System and Worker Health" description="Administrator-only operational status without exposing sensitive host details." href="/administration" isLoading={panels.isLoading} error={panels.error} data={panelData.system_health} onRefresh={() => panels.refetch()}><SystemHealthPanel rows={panelData.system_health?.rows ?? []} /></DashboardPanel></div> : null}
-
-          <div className="xl:col-span-8"><DashboardPanel title="Security Activity" description="Application audit and workflow activity with search, live-tail style updates, filtering, and download." href="/audit-logs" isLoading={panels.isLoading} error={panels.error} empty={!panelData.activity?.rows?.length} data={panelData.activity?.rows} onRefresh={() => panels.refetch()}><ActivityLogPanel rows={panelData.activity?.rows ?? []} /></DashboardPanel></div>
-          <div className="xl:col-span-4"><DashboardPanel title="Recommended Actions" description="Actionable work queue prioritized by risk, due date, count, and responsible role." href="/findings" isLoading={panels.isLoading} error={panels.error} data={panelData.recommended_actions} onRefresh={() => panels.refetch()}><RecommendedActionsPanel rows={panelData.recommended_actions?.rows ?? []} /></DashboardPanel></div>
+          <div className="xl:col-span-6"><DashboardPanel title="Recommended Actions" description="Actionable work queue prioritized by risk, due date, count, and responsible role." href="/findings" isLoading={panels.isLoading} error={panels.error} data={panelData.recommended_actions} onRefresh={() => panels.refetch()}><RecommendedActionsPanel rows={panelData.recommended_actions?.rows ?? []} /></DashboardPanel></div>
         </div>
+        ) : null}
+
+        {analyticsView === 'operations' && user?.role === 'admin' ? (
+        <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-12">
+          <div className="xl:col-span-4"><DashboardPanel title="Approvals" description="Pending, approved, rejected, and expiring Security Team review requests." href="/approvals" isLoading={panels.isLoading} error={panels.error} data={panelData.approvals} onRefresh={() => panels.refetch()}><ApprovalMetricsPanel panel={panelData.approvals ?? {}} /></DashboardPanel></div>
+          <div className="xl:col-span-4"><DashboardPanel title="Generative AI Automation Status" description="Registered, running, idle, approval-gated, failed, blocked, and offline automation states." href="/ai-agents" isLoading={panels.isLoading} error={panels.error} data={panelData.ai_agents} onRefresh={() => panels.refetch()}><AIAgentMetricsPanel panel={panelData.ai_agents ?? {}} /></DashboardPanel></div>
+          <div className="xl:col-span-4"><DashboardPanel title="Automation Safety Top 10" description="Compact safety-control status for local automation risks and policy enforcement events." href="/ai-agents" isLoading={panels.isLoading} error={panels.error} data={panelData.agentic_safety} onRefresh={() => panels.refetch()}><AgenticSafetyPanel rows={panelData.agentic_safety?.rows ?? []} /></DashboardPanel></div>
+          <div className="xl:col-span-6"><DashboardPanel title="Evidence Processing" description="Pipeline from raw observations through report inclusion, with backlog and redaction metrics." href="/reports" isLoading={panels.isLoading} error={panels.error} data={panelData.evidence_pipeline} onRefresh={() => panels.refetch()}><EvidencePipelinePanel panel={panelData.evidence_pipeline ?? { rows: [] }} /></DashboardPanel></div>
+          <div className="xl:col-span-6"><DashboardPanel title="Automation Task Throughput" description="Task activity inferred from local Generative AI automation workflow events and active security operations." href="/ai-agents" isLoading={timeseries.isLoading} error={timeseries.error} data={timeseries.data?.scans} onRefresh={() => timeseries.refetch()}><TimeSeriesPanel series={deriveAiThroughput(timeseries.data?.scans ?? [])} height={260} /></DashboardPanel></div>
+          <div className="xl:col-span-12"><DashboardPanel title="System and Worker Health" description="Administrator-only operational status without exposing sensitive host details." href="/administration" isLoading={panels.isLoading} error={panels.error} data={panelData.system_health} onRefresh={() => panels.refetch()}><SystemHealthPanel rows={panelData.system_health?.rows ?? []} /></DashboardPanel></div>
+          <div className="xl:col-span-8"><DashboardPanel title="Security Activity" description="Application audit and workflow activity with search, live-tail style updates, filtering, and download." href="/audit-logs" isLoading={panels.isLoading} error={panels.error} empty={!panelData.activity?.rows?.length} data={panelData.activity?.rows} onRefresh={() => panels.refetch()}><ActivityLogPanel rows={panelData.activity?.rows ?? []} /></DashboardPanel></div>
+        </div>
+        ) : null}
       </GrafanaStyleDashboard>
       ) : null}
     </>
@@ -388,6 +436,28 @@ function relativeTime(value: Date) {
 
 function fallbackMetrics(): DashboardMetric[] {
   return ['Security Score', 'Active Projects', 'Approved Assets', 'Running Scans', 'Failed Scans', 'Open Findings', 'Critical Findings', 'Pending Approvals', 'Retests Required', 'Reports Ready', 'Active Automations', 'Policy Violations'].map((title, index) => ({ key: title.toLowerCase().replaceAll(' ', '_'), title, value: 0, previous: 0, change: 0, status: 'ok', href: index === 0 ? '/findings' : '/dashboard' }));
+}
+
+function analyticsViewDescription(view: AnalyticsView) {
+  const descriptions: Record<AnalyticsView, string> = {
+    risk: 'See exposure, changes over time, and the assets that need attention first.',
+    scanning: 'Monitor active work, reliability, coverage, throughput, and slow scans.',
+    remediation: 'Track ownership, overdue work, validation, retests, and SLA performance.',
+    operations: 'Review approvals, automation safety, evidence flow, workers, and audit activity.',
+  };
+  return descriptions[view];
+}
+
+function analyticsMetrics(metrics: DashboardMetric[], view: AnalyticsView) {
+  const preferred: Record<AnalyticsView, string[]> = {
+    risk: ['security_score', 'open_findings', 'critical_findings', 'approved_assets'],
+    scanning: ['running_scans', 'failed_scans', 'approved_assets', 'reports_ready'],
+    remediation: ['open_findings', 'retests_required', 'critical_findings', 'reports_ready'],
+    operations: ['pending_approvals', 'active_automations', 'policy_violations', 'active_projects'],
+  };
+  const byKey = new Map(metrics.map((metric) => [metric.key, metric]));
+  const selected = preferred[view].map((key) => byKey.get(key)).filter((metric): metric is DashboardMetric => Boolean(metric));
+  return selected.length ? selected : metrics.slice(0, 4);
 }
 
 function toPostureFallback(rows: any[] | undefined, security = 0, coverage = 0, remediation = 0) {

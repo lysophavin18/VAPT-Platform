@@ -20,7 +20,7 @@ export const navItems = [
   { href: '/schedules', label: 'Schedules', icon: CalendarClock, roles: ['admin', 'manager', 'security_team', 'analyst'] },
   { href: '/findings', label: 'Findings', icon: ShieldCheck, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
   { href: '/ai-agents', label: 'Generative AI', icon: Bot, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
-  { href: '/cvss-calculator', label: 'CVSS Calculator', icon: Calculator, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
+  { href: '/cvss-calculator', label: 'CVSS Calculator', icon: Calculator, roles: ['admin'] },
   { href: '/reports', label: 'Reports', icon: FileText, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
   { href: '/retests', label: 'Retests', icon: CheckCircle2, roles: ['admin', 'manager', 'security_team', 'analyst'] },
   { href: '/audit-logs', label: 'Audit Logs', icon: Archive, roles: ['admin', 'manager', 'security_team'] },
@@ -28,11 +28,11 @@ export const navItems = [
 ] as const;
 
 export const quickActions = [
-  { href: '/projects/new', label: 'Create Project', icon: FolderKanban },
-  { href: '/assets/discovery', label: 'Start Asset Discovery', icon: Search },
-  { href: '/scans/new', label: 'New Scan', icon: Radar },
-  { href: '/administration', label: 'System Administrator', icon: Users },
-  { href: '/reports', label: 'Reports', icon: FileText },
-  { href: '/cvss-calculator', label: 'CVSS Calculator', icon: Calculator },
-  { href: '/notifications', label: 'Notifications', icon: Bell },
+  { href: '/projects/new', label: 'Create Project', icon: FolderKanban, roles: ['admin', 'manager', 'security_team', 'analyst'] },
+  { href: '/assets/discovery', label: 'Start Asset Discovery', icon: Search, roles: ['admin', 'manager', 'security_team', 'analyst'] },
+  { href: '/scans/new', label: 'New Scan', icon: Radar, roles: ['admin', 'manager', 'security_team', 'analyst'] },
+  { href: '/administration', label: 'System Administrator', icon: Users, roles: ['admin'] },
+  { href: '/reports', label: 'Reports', icon: FileText, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
+  { href: '/cvss-calculator', label: 'CVSS Calculator', icon: Calculator, roles: ['admin'] },
+  { href: '/notifications', label: 'Notifications', icon: Bell, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
 ] as const;

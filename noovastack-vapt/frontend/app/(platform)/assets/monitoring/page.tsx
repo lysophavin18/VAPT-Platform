@@ -53,7 +53,7 @@ const DISCOVERY_MODULE_LABELS: Record<string, string> = {
   tech_fingerprint: 'Tech Fingerprint',
 };
 
-function EventRow({ event, onAck }: { event: DomainMonitorEvent; onAck: () => void }) {
+function EventRow({ event, onAck, canManage }: { event: DomainMonitorEvent; onAck: () => void; canManage: boolean }) {
   const meta = EVENT_META[event.event_type] ?? { label: event.event_type, icon: Info, color: 'text-slate-500 bg-slate-50' };
   const Icon = meta.icon;
   const isAcked = Boolean(event.acknowledged_at);
@@ -81,7 +81,7 @@ function EventRow({ event, onAck }: { event: DomainMonitorEvent; onAck: () => vo
           </details>
         )}
       </div>
-      {!isAcked && (
+      {!isAcked && canManage && (
         <button
           onClick={onAck}
           className="shrink-0 rounded p-1 opacity-60 hover:opacity-100"
@@ -100,12 +100,14 @@ function MonitorCard({
   onToggle,
   onDelete,
   onAckEvent,
+  canManage,
 }: {
   monitor: DomainMonitor;
   onCheckNow: () => void;
   onToggle: () => void;
   onDelete: () => void;
   onAckEvent: (eventId: string) => void;
+  canManage: boolean;
 }) {
   const [expanded, setExpanded] = useState(false);
   const unacked = monitor.events.filter(e => !e.acknowledged_at);
@@ -149,6 +151,7 @@ function MonitorCard({
           </span>
 
           {/* Actions */}
+          {canManage && <>
           <button
             onClick={onCheckNow}
             className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-medium text-slate-600 hover:bg-slate-50"
@@ -173,6 +176,7 @@ function MonitorCard({
           >
             <Trash2 className="h-3 w-3 inline" />
           </button>
+          </>}
         </div>
       </div>
 
@@ -208,6 +212,7 @@ function MonitorCard({
                   key={ev.id}
                   event={ev}
                   onAck={() => onAckEvent(ev.id)}
+                  canManage={canManage}
                 />
               ))}
             </div>
@@ -334,14 +339,16 @@ function AddMonitorForm({
 // ─── Main Page ───────────────────────────────────────────────────────────────
 
 export default function DomainMonitoringPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const canManage = ['admin', 'manager', 'security_team', 'analyst'].includes(user?.role ?? '');
   const projects = useProjects();
   const queryClient = useQueryClient();
   const [projectId, setProjectId] = useState('');
   const [showAdd, setShowAdd] = useState(false);
+  const [search, setSearch] = useState('');
 
   const monitors = useQuery({
-    queryKey: ['domain-monitors', projectId],
+    queryKey: ['domain-monitors', projectId, user?.id],
     queryFn: () => api.domainMonitors(projectId, token),
     enabled: Boolean(projectId && token),
     refetchInterval: 30_000,
@@ -389,14 +396,16 @@ export default function DomainMonitoringPage() {
 
   return <>
     <PageHeader
-      title="Domain Monitoring"
-      description="Continuously watch domains for new subdomains, IP changes, technology updates, and open ports."
+      title="Monitoring Asset Control List"
+      description={user?.role === 'admin'
+        ? 'System administrator: view and manage monitored domains across all projects.'
+        : 'Register and monitor domains in your own projects. Other users’ projects are private.'}
       breadcrumbs={[{ href: '/assets', label: 'Assets' }, { label: 'Monitoring' }]}
       actions={
-        <Button onClick={() => setShowAdd(v => !v)} disabled={!projectId}>
+        canManage ? <Button onClick={() => setShowAdd(v => !v)} disabled={!projectId}>
           <Plus className="mr-1.5 h-4 w-4" />
           Add Domain
-        </Button>
+        </Button> : undefined
       }
     />
 
@@ -425,7 +434,7 @@ export default function DomainMonitoringPage() {
         </Button>
       </div>
 
-      {showAdd && projectId && (
+      {showAdd && projectId && canManage && (
         <div className="mt-6 border-t border-slate-200 pt-6">
           <h3 className="mb-4 font-semibold text-[#0B1F3A]">Add Domain to Monitor</h3>
           <AddMonitorForm
@@ -438,6 +447,10 @@ export default function DomainMonitoringPage() {
     </Card>
 
     {/* Monitor list */}
+    {projectId && (
+      <Input aria-label="Search monitored assets" placeholder="Search domains or labels…" value={search} onChange={e => setSearch(e.target.value)} className="mb-4" />
+    )}
+    {monitors.isError && <p role="alert" className="mb-4 text-sm text-red-600">Unable to load monitors. The project may be unavailable or access may have changed.</p>}
     {!projectId && (
       <Card className="p-8 text-center text-slate-500">
         Select a project to view and manage domain monitors.
@@ -448,7 +461,7 @@ export default function DomainMonitoringPage() {
       <p className="text-sm text-slate-500">Loading monitors…</p>
     )}
 
-    {projectId && !monitors.isLoading && list.length === 0 && (
+    {projectId && !monitors.isLoading && !monitors.isError && list.length === 0 && (
       <Card className="p-8 text-center">
         <Globe2 className="mx-auto h-10 w-10 text-slate-300 mb-3" />
         <p className="font-semibold text-[#0B1F3A]">No domains monitored yet</p>
@@ -460,10 +473,11 @@ export default function DomainMonitoringPage() {
 
     {list.length > 0 && (
       <div className="space-y-4">
-        {list.map(monitor => (
+        {list.filter(m => `${m.domain} ${m.label ?? ''}`.toLowerCase().includes(search.toLowerCase())).map(monitor => (
           <MonitorCard
             key={monitor.id}
             monitor={monitor}
+            canManage={canManage}
             onCheckNow={() => handleCheckNow(monitor.id)}
             onToggle={() => handleToggle(monitor)}
             onDelete={() => handleDelete(monitor)}

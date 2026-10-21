@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from database.models import Asset, AuditLog, Project
-from auth import get_asset_or_404, get_project_or_404, require_user, User, require_manager
+from auth import get_asset_or_404, get_project_or_404, project_access_clause, require_user, User, require_manager
 from api.schemas import AssetCreate, AssetUpdate, AssetResponse, AssetDiscoveryRequest, DiscoveryJobStatus
 
 router = APIRouter()
@@ -73,7 +73,7 @@ async def list_all_assets(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager),
 ):
-    query = select(Asset)
+    query = select(Asset).join(Project, Project.id == Asset.project_id).where(project_access_clause(current_user))
     if approval_status:
         query = query.where(Asset.approval_status == approval_status)
     if scope_status:
@@ -183,6 +183,16 @@ async def get_discovery_job_status(
     States: PENDING → STARTED → SUCCESS | FAILURE
     """
     await get_project_or_404(db, project_id, current_user)
+
+    # Bind the job to the authorized project before accessing the result backend.
+    job = (await db.execute(select(AuditLog.id).where(
+        AuditLog.project_id == project_id,
+        AuditLog.event_type == "asset_discovery",
+        AuditLog.action == "started",
+        AuditLog.details["job_id"].as_string() == job_id,
+    ).limit(1))).scalar_one_or_none()
+    if not job:
+        raise HTTPException(status_code=404, detail="Discovery job not found")
 
     try:
         from celery.result import AsyncResult

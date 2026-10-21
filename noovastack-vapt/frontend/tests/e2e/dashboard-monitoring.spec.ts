@@ -8,6 +8,8 @@ async function authenticate(page) {
 }
 
 async function stubDashboardApis(page) {
+  await page.route('**/api/auth/me', (route) => route.fulfill({ json: { id: 'u1', email: 'admin@noovastack.local', username: 'admin', full_name: 'System Administrator', role: 'admin', is_active: true } }));
+  await page.route('**/api/approvals**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/projects', (route) => route.fulfill({ json: [{ id: 'p1', name: 'Portal', environment: 'production', status: 'active' }] }));
   await page.route('**/api/projects/p1/assets', (route) => route.fulfill({ json: [{ id: 'a1', project_id: 'p1', asset_type: 'website', value: 'https://app.local', name: 'App', scope_status: 'in_scope', approval_status: 'approved', environment: 'production' }] }));
   await page.route('**/api/dashboard/metrics**', (route) => route.fulfill({ json: { range: { from: '2026-07-01T00:00:00', to: '2026-07-30T00:00:00' }, security_score: 84, asset_coverage: 74, remediation_completion: 61, metrics: ['Security Score', 'Active Projects', 'Approved Assets', 'Running Scans', 'Failed Scans', 'Open Findings', 'Critical Findings', 'Pending Approvals', 'Retests Required', 'Reports Ready', 'Active Automations', 'Policy Violations'].map((title, index) => ({ key: title.toLowerCase().replaceAll(' ', '_'), title, value: index === 0 ? 84 : index + 1, previous: index, change: 10, status: index === 6 ? 'critical' : index === 5 ? 'warning' : 'ok', href: '/findings' })) } }));
@@ -19,11 +21,16 @@ test('dashboard renders Grafana-inspired monitoring workspace and filters', asyn
   await authenticate(page);
   await stubDashboardApis(page);
   await page.goto('/dashboard?project_id=all&environment=production&range=30d&refresh=30s');
-  await expect(page.getByRole('heading', { name: 'Security Dashboard' })).toBeVisible();
+  await page.getByRole('button', { name: /Detailed analytics/ }).click();
+  await expect(page.getByRole('heading', { name: 'Choose what you need to understand' })).toBeVisible();
   await expect(page.getByLabel('Time range')).toHaveValue('30d');
   await expect(page.getByText('Security Posture Over Time')).toBeVisible();
   await expect(page.getByText('Findings Trend')).toBeVisible();
+  await expect(page.getByText('Active Scan Progress')).toHaveCount(0);
+  await page.getByRole('tab', { name: /Scan health/ }).click();
   await expect(page.getByText('Active Scan Progress')).toBeVisible();
+  await expect(page.getByText('Security Posture Over Time')).toHaveCount(0);
+  await page.getByRole('tab', { name: /Platform operations/ }).click();
   await expect(page.getByText('Automation Safety Top 10')).toBeVisible();
   await page.getByLabel('Time range').selectOption('7d');
   await expect(page).toHaveURL(/range=7d/);
@@ -34,6 +41,7 @@ test('dashboard works on mobile without horizontal overflow', async ({ page }) =
   await authenticate(page);
   await stubDashboardApis(page);
   await page.goto('/dashboard');
+  await page.getByRole('button', { name: /Detailed analytics/ }).click();
   await expect(page.getByText('Security Posture Over Time')).toBeVisible();
   const hasOverflow = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth + 1);
   expect(hasOverflow).toBeFalsy();

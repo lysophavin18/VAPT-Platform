@@ -7,6 +7,7 @@ import { PageHeader } from '@/components/layout/page-header';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { SeverityBadge } from '@/components/ui/badge';
+import { PermissionGuard } from '@/components/permission-guard';
 
 const metricGroups = [
   { title: 'Exploitability Metrics', metrics: [
@@ -46,7 +47,15 @@ export default function CvssCalculatorPage() {
   }
 
   return (
-    <>
+    <PermissionGuard
+      roles={['admin']}
+      fallback={
+        <Card className="mx-auto max-w-xl p-8 text-center">
+          <h1 className="text-2xl font-bold text-[#0B1F3A]">Administrator access required</h1>
+          <p className="mt-2 text-sm text-slate-600">The CVSS Calculator is available only to system administrators.</p>
+        </Card>
+      }
+    >
       <PageHeader title="CVSS Calculator" description="Calculate CVSS v3.1 base score and vector for verified vulnerability findings." />
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">
@@ -64,7 +73,7 @@ export default function CvssCalculatorPage() {
           <Card><CardHeader><h2 className="font-semibold">Scoring Notes</h2></CardHeader><CardContent className="space-y-2 text-sm text-slate-600"><p>This calculator produces the CVSS v3.1 base score only.</p><p>Temporal and environmental metrics are not included.</p><p>Use the result when manually validating or documenting findings.</p></CardContent></Card>
         </aside>
       </div>
-    </>
+    </PermissionGuard>
   );
 }
 

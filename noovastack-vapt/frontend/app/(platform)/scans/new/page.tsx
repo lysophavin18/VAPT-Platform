@@ -163,13 +163,13 @@ export default function NewScanPage() {
     }
   }
 
-  async function launch() {
+  async function submitRequest() {
     try {
       const scan = await createDraft();
       const check = await api.validateScan(scan.id, token);
       setValidation(check);
       if (!check.valid) {
-        toast.error('Fix the review items before running');
+        toast.error('Fix the review items before submitting');
         return;
       }
       if (form.schedule_mode === 'schedule_later') {
@@ -192,11 +192,11 @@ export default function NewScanPage() {
         router.push('/schedules');
         return;
       }
-      const launched = await api.launchScan(scan.id, token);
-      toast.success('Scan started');
-      router.push(`/scans/${launched.id}/progress`);
+      await api.requestScanApproval(scan.id, token);
+      toast.success('Scan request submitted for approval');
+      router.push(`/scans/${scan.id}`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : 'Unable to run scan');
+      toast.error(error instanceof Error ? error.message : 'Unable to submit scan request');
     }
   }
 
@@ -265,13 +265,13 @@ export default function NewScanPage() {
         {step === 2 ? <Card>
           <CardHeader>
             <p className="text-xs font-semibold uppercase tracking-wide text-[#64748B]">Review</p>
-            <h2 className="mt-1 text-lg font-semibold text-[#0F172A]">Ready to launch?</h2>
-            <p className="mt-1 text-sm text-[#64748B]">Review scope and run a readiness check before starting.</p>
+            <h2 className="mt-1 text-lg font-semibold text-[#0F172A]">Ready to submit?</h2>
+            <p className="mt-1 text-sm text-[#64748B]">Review the scope and check readiness before requesting approval.</p>
           </CardHeader>
           <CardContent className="space-y-6">
             <ReviewGrid template={selectedTemplate} project={selectedProject?.name} targetCount={selectedAssetIds.length} depth={form.scan_depth} mode={form.assessment_mode} authType={form.assessment_mode === 'black_box' ? 'None' : labelForAuthType(form.auth_type)} />
             <div className="grid gap-4 md:grid-cols-2">
-              <RunOption active={form.schedule_mode === 'run_now'} icon={Rocket} title="Launch now" text="Run immediately after readiness check passes." onClick={() => setForm({ ...form, schedule_mode: 'run_now' })} />
+              <RunOption active={form.schedule_mode === 'run_now'} icon={Rocket} title="Run after approval" text="The scan starts automatically as soon as an administrator approves it." onClick={() => setForm({ ...form, schedule_mode: 'run_now' })} />
               <RunOption active={form.schedule_mode === 'schedule_later'} icon={CalendarClock} title="Schedule" text="Run during a chosen testing window." onClick={() => setForm({ ...form, schedule_mode: 'schedule_later' })} />
             </div>
             {form.schedule_mode === 'schedule_later' ? <div className="grid gap-4 md:grid-cols-3"><Field label="Date"><Input type="date" value={form.schedule_date} onChange={(event) => setForm({ ...form, schedule_date: event.target.value })} /></Field><Field label="Start time"><Input type="time" value={form.schedule_time} onChange={(event) => setForm({ ...form, schedule_time: event.target.value })} /></Field><Field label="Time zone"><Input value={form.timezone} onChange={(event) => setForm({ ...form, timezone: event.target.value })} /></Field><Field label="Repeat"><Select value={form.recurrence_rule} onChange={(event) => setForm({ ...form, recurrence_rule: event.target.value })}><option value="once">One-time</option><option value="daily">Daily</option><option value="weekly">Weekly</option><option value="monthly">Monthly</option></Select></Field></div> : null}
@@ -289,7 +289,7 @@ export default function NewScanPage() {
           <div className="grid grid-cols-2 gap-2 sm:flex sm:flex-wrap">
             <Button className="w-full sm:w-auto" variant="secondary" disabled={createScan.isPending || !hasTargets} onClick={saveDraft}>Save Draft</Button>
             {step > 0 ? <Button className="w-full sm:w-auto" variant="outline" onClick={() => setStep((value) => Math.max(0, value - 1))}>Back</Button> : null}
-            {step < steps.length - 1 ? <Button className="col-span-2 w-full sm:w-auto" disabled={step === 1 && !hasTargets} onClick={() => setStep((value) => Math.min(steps.length - 1, value + 1))}>Continue <ChevronRight className="h-4 w-4" /></Button> : <Button className="col-span-2 w-full sm:w-auto" disabled={!hasTargets || Boolean(validation && !validation.valid)} onClick={launch}><Rocket className="h-4 w-4" /> {form.schedule_mode === 'schedule_later' ? 'Create Schedule' : 'Launch Scan'}</Button>}
+            {step < steps.length - 1 ? <Button className="col-span-2 w-full sm:w-auto" disabled={step === 1 && !hasTargets} onClick={() => setStep((value) => Math.min(steps.length - 1, value + 1))}>Continue <ChevronRight className="h-4 w-4" /></Button> : <Button className="col-span-2 w-full sm:w-auto" disabled={!hasTargets || Boolean(validation && !validation.valid)} onClick={submitRequest}><Rocket className="h-4 w-4" /> {form.schedule_mode === 'schedule_later' ? 'Create Schedule' : 'Submit for Approval'}</Button>}
           </div>
         </div>
       </main>
@@ -406,7 +406,7 @@ function ProfessionalSafetyCard() {
 }
 
 function ValidationPanel({ validation }: { validation: ScanValidationResult }) {
-  return <div className={`rounded-2xl border p-4 text-sm ${validation.valid ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}><p className="font-semibold">{validation.valid ? 'Ready to launch' : 'Needs attention before launch'}</p>{validation.blocking_reasons.length ? <ul className="mt-2 list-disc space-y-1 pl-5">{validation.blocking_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul> : null}{validation.warnings.length ? <ul className="mt-2 list-disc space-y-1 pl-5">{validation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}</div>;
+  return <div className={`rounded-2xl border p-4 text-sm ${validation.valid ? 'border-green-200 bg-green-50 text-green-800' : 'border-amber-200 bg-amber-50 text-amber-900'}`}><p className="font-semibold">{validation.valid ? 'Ready to submit for approval' : 'Needs attention before submission'}</p>{validation.blocking_reasons.length ? <ul className="mt-2 list-disc space-y-1 pl-5">{validation.blocking_reasons.map((reason) => <li key={reason}>{reason}</li>)}</ul> : null}{validation.warnings.length ? <ul className="mt-2 list-disc space-y-1 pl-5">{validation.warnings.map((warning) => <li key={warning}>{warning}</li>)}</ul> : null}</div>;
 }
 
 function materialIconClass(tone: string, active: boolean) {
