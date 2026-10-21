@@ -192,7 +192,9 @@ async def validate_scan(
     current_user: User = Depends(require_user),
 ):
     scan = await get_scan_or_404(db, scan_id, current_user)
-    result = await _validate_scan_ready(db, scan)
+    # Readiness checks validate the requested configuration. The separate
+    # approval gate is enforced when the scan is actually dispatched.
+    result = await _validate_scan_ready(db, scan, require_approval=False)
     db.add(ScanEvent(scan_id=scan.id, event_type="scope_validation", severity="info" if result["valid"] else "warning", summary="Scope, authorization, and safety validation completed.", details_json=result))
     await db.commit()
     return result
@@ -205,6 +207,15 @@ async def request_scan_approval(
     current_user: User = Depends(require_user),
 ):
     scan = await get_scan_or_404(db, scan_id, current_user)
+    readiness = await _validate_scan_ready(db, scan, require_approval=False)
+    if not readiness["valid"]:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "message": "Scan request is not ready for approval",
+                "blocking_reasons": readiness["blocking_reasons"],
+            },
+        )
     now = datetime.utcnow()
     active_approvals = (
         await db.execute(
@@ -268,11 +279,19 @@ async def start_scan(
     await db.commit()
 
     from workers.celery_app import run_scan
-    task = run_scan.apply_async(
-        args=[str(scan.id)],
-        queue="scan",
-        task_id=str(uuid.uuid4()),
-    )
+    try:
+        task = run_scan.apply_async(
+            args=[str(scan.id)],
+            queue="scan",
+            task_id=str(uuid.uuid4()),
+        )
+    except Exception as exc:
+        # Keep the valid approval so an operational retry can dispatch the
+        # scan without asking the user to submit another request.
+        scan.status = "approved"
+        db.add(ScanEvent(scan_id=scan.id, event_type="dispatch_failed", severity="error", summary="Approved scan could not be queued automatically.", details_json={"error": str(exc)}))
+        await db.commit()
+        raise HTTPException(status_code=503, detail="Scan was approved but could not be queued automatically") from exc
     scan.status = "running"
     scan.started_at = datetime.utcnow()
     scan.celery_task_id = task.id
@@ -542,7 +561,7 @@ async def _get_or_create_safety(db: AsyncSession, scan_id) -> ScanSafetyState:
     return safety
 
 
-async def _validate_scan_ready(db: AsyncSession, scan: Scan) -> dict:
+async def _validate_scan_ready(db: AsyncSession, scan: Scan, *, require_approval: bool = True) -> dict:
     blocking_reasons = []
     warnings = []
     project = (await db.execute(select(Project).where(Project.id == scan.project_id))).scalar_one_or_none()
@@ -581,11 +600,13 @@ async def _validate_scan_ready(db: AsyncSession, scan: Scan) -> dict:
         if not profile or not profile.enabled:
             blocking_reasons.append("Selected scan profile is not enabled.")
     approval_required = _approval_required(scan, profile)
+    approval_granted = not approval_required
     if approval_required:
         approvals = (
             await db.execute(select(Approval).where(Approval.scan_id == scan.id, Approval.status == "approved"))
         ).scalars().all()
-        if not any(approval_is_valid(approval) for approval in approvals):
+        approval_granted = any(approval_is_valid(approval) for approval in approvals)
+        if require_approval and not approval_granted:
             blocking_reasons.append("Required scan approval has not been granted or has expired.")
 
     prohibited_actions = ["denial_of_service", "brute_force", "credential_theft", "malware", "persistent_access", "data_exfiltration", "production_data_modification", "unauthorized_pivoting"]
@@ -599,6 +620,7 @@ async def _validate_scan_ready(db: AsyncSession, scan: Scan) -> dict:
         "blocking_reasons": blocking_reasons,
         "warnings": warnings,
         "approval_required": approval_required,
+        "approval_granted": approval_granted,
         "safety_controls_active": True,
         "estimated_duration": _duration_estimate(scan),
     }

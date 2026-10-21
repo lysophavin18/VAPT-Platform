@@ -351,7 +351,10 @@ function formatRole(role?: string) {
 
 function buildSearchResults(data: { projects: Project[]; scans: Scan[]; findings: Finding[]; assets: Asset[]; role?: string }): SearchResult[] {
   const projectById = new Map(data.projects.map((project) => [project.id, project.name]));
-  const featureItems = [...navItems.filter((item) => canAccess(data.role, item.roles)), ...quickActions].filter((item, index, rows) => rows.findIndex((candidate) => candidate.href === item.href) === index);
+  const featureItems = [
+    ...navItems.filter((item) => canAccess(data.role, item.roles)),
+    ...quickActions.filter((item) => canAccess(data.role, item.roles)),
+  ].filter((item, index, rows) => rows.findIndex((candidate) => candidate.href === item.href) === index);
   const featureResults = featureItems.map((item) => ({
     id: item.href,
     title: item.label,

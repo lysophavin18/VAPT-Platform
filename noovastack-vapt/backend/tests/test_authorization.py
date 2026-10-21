@@ -29,9 +29,10 @@ def _user(role: str) -> User:
     return User(id=uuid.uuid4(), role=role, is_active=True)
 
 
-def test_project_access_clause_is_global_only_for_admin_and_manager():
+def test_project_access_clause_is_global_only_for_system_admin():
     assert project_access_clause(_user("admin")) is True
-    assert project_access_clause(_user("manager")) is True
+    assert "projects.owner_id" in str(project_access_clause(_user("manager")))
+    assert "projects.owner_id" in str(project_access_clause(_user("security_team")))
     assert "projects.owner_id" in str(project_access_clause(_user("analyst")))
     assert "projects.owner_id" in str(project_access_clause(_user("viewer")))
 

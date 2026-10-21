@@ -159,9 +159,9 @@ export default function AdministrationPage() {
   const decideApprovalMutation = useMutation({
     mutationFn: ({ id, decision, reason }: { id: string; decision: 'approved' | 'rejected' | 'more_information'; reason: string }) =>
       api.decideApproval(id, decision, reason, token),
-    onSuccess: async () => {
+    onSuccess: async (_, variables) => {
       await queryClient.invalidateQueries({ queryKey: ['approvals'] });
-      toast.success('Approval decision recorded');
+      toast.success(variables.decision === 'approved' ? 'Approved — the scan started automatically' : 'Approval decision recorded');
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Decision failed'),
   });

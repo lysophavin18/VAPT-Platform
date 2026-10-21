@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "NoovaStack PostgreSQL",
+      "Group": "NoovaStack",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "noovastack_vapt",
+      "Username": "noovastack",
+      "SSLMode": "prefer"
+    }
+  }
+}

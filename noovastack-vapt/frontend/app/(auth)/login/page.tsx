@@ -20,7 +20,7 @@ type LoginValues = z.infer<typeof loginSchema>;
 export default function LoginPage() {
   const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
-  const { control, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<LoginValues>({ resolver: zodResolver(loginSchema), defaultValues: { email: '', password: '', mfaCode: '', rememberDevice: false } });
+  const { control, handleSubmit, setValue, formState: { errors, isSubmitting } } = useForm<LoginValues>({ resolver: zodResolver(loginSchema), defaultValues: { email: '', password: '', rememberDevice: false } });
 
   useEffect(() => {
     const emailInput = document.querySelector<HTMLInputElement>('input[autocomplete="email"]');
@@ -57,7 +57,6 @@ export default function LoginPage() {
             <button type="button" className="absolute right-2 top-2 rounded p-1 text-slate-500" onClick={() => setShowPassword((value) => !value)} aria-label={showPassword ? 'Hide password' : 'Show password'}>{showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}</button>
           </div>
         </Field>
-        <Field label="MFA code when required"><Controller name="mfaCode" control={control} render={({ field }) => <Input inputMode="numeric" autoComplete="one-time-code" placeholder="Optional" aria-label="MFA code" value={field.value ?? ''} onChange={field.onChange} onBlur={field.onBlur} />} /></Field>
         <label className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-400"><Controller name="rememberDevice" control={control} render={({ field }) => <input type="checkbox" className="rounded border-slate-300 dark:border-slate-600 dark:bg-slate-800" checked={field.value ?? false} onChange={field.onChange} />} /> Remember this device when permitted</label>
         <Button type="submit" className="w-full" disabled={isSubmitting}>{isSubmitting ? 'Signing in...' : 'Sign In'}</Button>
       </form>

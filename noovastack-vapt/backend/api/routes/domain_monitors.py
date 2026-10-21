@@ -11,6 +11,7 @@ POST   /domain-monitors/{id}/events/{event_id}/ack    acknowledge an event
 GET    /domain-monitors/{id}/events                   paginated event history
 """
 from datetime import datetime, timedelta
+from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import select
@@ -19,7 +20,7 @@ from sqlalchemy.orm import selectinload
 
 from database import get_db
 from database.models import AuditLog, DomainMonitor, DomainMonitorEvent, Project
-from auth import get_project_or_404, require_user, User
+from auth import get_project_or_404, project_access_clause, require_user, require_analyst, User
 from api.schemas import (
     DomainMonitorCreate, DomainMonitorResponse, DomainMonitorUpdate,
     DomainMonitorEventResponse,
@@ -28,11 +29,11 @@ from api.schemas import (
 router = APIRouter()
 
 
-async def _get_monitor_or_404(db: AsyncSession, monitor_id: str, user: User) -> DomainMonitor:
+async def _get_monitor_or_404(db: AsyncSession, monitor_id: UUID, user: User) -> DomainMonitor:
     result = await db.execute(
         select(DomainMonitor)
         .join(Project, Project.id == DomainMonitor.project_id)
-        .where(DomainMonitor.id == monitor_id)
+        .where(DomainMonitor.id == monitor_id, project_access_clause(user))
         .options(selectinload(DomainMonitor.events))
     )
     monitor = result.scalar_one_or_none()
@@ -47,10 +48,10 @@ async def _get_monitor_or_404(db: AsyncSession, monitor_id: str, user: User) -> 
     status_code=status.HTTP_201_CREATED,
 )
 async def create_domain_monitor(
-    project_id: str,
+    project_id: UUID,
     data: DomainMonitorCreate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_user),
+    current_user: User = Depends(require_analyst),
 ):
     """Register a domain for continuous monitoring."""
     await get_project_or_404(db, project_id, current_user)
@@ -80,6 +81,7 @@ async def create_domain_monitor(
         last_snapshot=[],
         next_check_at=now,   # trigger immediately on first beat tick
         created_by=current_user.id,
+        events=[],
     )
     db.add(monitor)
     db.add(AuditLog(
@@ -90,8 +92,7 @@ async def create_domain_monitor(
         details={"domain": monitor.domain, "interval_hours": monitor.check_interval_hours},
     ))
     await db.commit()
-    await db.refresh(monitor)
-    return monitor
+    return await _get_monitor_or_404(db, monitor.id, current_user)
 
 
 @router.get(
@@ -99,7 +100,7 @@ async def create_domain_monitor(
     response_model=list[DomainMonitorResponse],
 )
 async def list_domain_monitors(
-    project_id: str,
+    project_id: UUID,
     status_filter: str | None = Query(default=None, alias="status"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
@@ -119,7 +120,7 @@ async def list_domain_monitors(
 
 @router.get("/domain-monitors/{monitor_id}", response_model=DomainMonitorResponse)
 async def get_domain_monitor(
-    monitor_id: str,
+    monitor_id: UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
@@ -128,10 +129,10 @@ async def get_domain_monitor(
 
 @router.patch("/domain-monitors/{monitor_id}", response_model=DomainMonitorResponse)
 async def update_domain_monitor(
-    monitor_id: str,
+    monitor_id: UUID,
     data: DomainMonitorUpdate,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_user),
+    current_user: User = Depends(require_analyst),
 ):
     monitor = await _get_monitor_or_404(db, monitor_id, current_user)
     updates = data.model_dump(exclude_unset=True)
@@ -147,9 +148,9 @@ async def update_domain_monitor(
 
 @router.delete("/domain-monitors/{monitor_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_domain_monitor(
-    monitor_id: str,
+    monitor_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_user),
+    current_user: User = Depends(require_analyst),
 ):
     monitor = await _get_monitor_or_404(db, monitor_id, current_user)
     await db.delete(monitor)
@@ -158,9 +159,9 @@ async def delete_domain_monitor(
 
 @router.post("/domain-monitors/{monitor_id}/check-now")
 async def trigger_check_now(
-    monitor_id: str,
+    monitor_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_user),
+    current_user: User = Depends(require_analyst),
 ):
     """Immediately dispatch a domain monitor check job."""
     monitor = await _get_monitor_or_404(db, monitor_id, current_user)
@@ -184,7 +185,7 @@ async def trigger_check_now(
     response_model=list[DomainMonitorEventResponse],
 )
 async def list_monitor_events(
-    monitor_id: str,
+    monitor_id: UUID,
     event_type: str | None = None,
     severity: str | None = None,
     unacknowledged_only: bool = False,
@@ -214,10 +215,10 @@ async def list_monitor_events(
     response_model=DomainMonitorEventResponse,
 )
 async def acknowledge_event(
-    monitor_id: str,
-    event_id: str,
+    monitor_id: UUID,
+    event_id: UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_user),
+    current_user: User = Depends(require_analyst),
 ):
     await _get_monitor_or_404(db, monitor_id, current_user)
     event = (await db.execute(

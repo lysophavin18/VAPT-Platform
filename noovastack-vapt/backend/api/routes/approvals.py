@@ -4,15 +4,28 @@ NoovaStack VAPT Platform - Approval Routes
 from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import select, and_, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from api.schemas import ApprovalDecisionRequest, ApprovalResponse
-from auth import User, require_manager, require_user
+from auth import User, require_manager, require_user, has_global_project_access, project_access_clause
 from database import get_db
-from database.models import Approval, AuditLog, Scan, ScanSchedule
+from database.models import Approval, AuditLog, Scan, ScanSchedule, Project, AIToolRequest
 
 router = APIRouter()
+
+
+def approval_access_clause(user):
+    if has_global_project_access(user):
+        return True
+    projects = select(Project.id).where(project_access_clause(user))
+    # Every linked resource must be accessible; unbound approvals fail closed.
+    return and_(
+        or_(Approval.scan_id.is_not(None), Approval.schedule_id.is_not(None), Approval.ai_tool_request_id.is_not(None)),
+        or_(Approval.scan_id.is_(None), Approval.scan_id.in_(select(Scan.id).where(Scan.project_id.in_(projects)))),
+        or_(Approval.schedule_id.is_(None), Approval.schedule_id.in_(select(ScanSchedule.id).where(ScanSchedule.project_id.in_(projects)))),
+        or_(Approval.ai_tool_request_id.is_(None), Approval.ai_tool_request_id.in_(select(AIToolRequest.id).where(AIToolRequest.project_id.in_(projects)))),
+    )
 
 
 def approval_is_valid(approval: Approval, now: datetime | None = None) -> bool:
@@ -48,7 +61,7 @@ async def list_approvals(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    query = select(Approval)
+    query = select(Approval).where(approval_access_clause(current_user))
     if status_filter:
         query = query.where(Approval.status == status_filter)
     if current_user.role not in ("admin", "manager", "security_team"):
@@ -76,7 +89,7 @@ async def decide_approval(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_manager),
 ):
-    result = await db.execute(select(Approval).where(Approval.id == approval_id))
+    result = await db.execute(select(Approval).where(Approval.id == approval_id, approval_access_clause(current_user)))
     approval = result.scalar_one_or_none()
     if not approval:
         raise HTTPException(status_code=404, detail="Approval request not found")
@@ -100,12 +113,15 @@ async def decide_approval(
     approval.approved_by = current_user.id if data.decision == "approved" else None
     approval.decided_at = datetime.utcnow()
 
+    approved_scan_id = None
     if approval.scan_id:
         scan_result = await db.execute(select(Scan).where(Scan.id == approval.scan_id))
         scan = scan_result.scalar_one_or_none()
         if scan:
             scan.status = resource_status_for_decision(data.decision)
             scan.approved_by = current_user.id if data.decision == "approved" else None
+            if data.decision == "approved":
+                approved_scan_id = str(scan.id)
 
     if approval.schedule_id:
         schedule = (
@@ -113,6 +129,21 @@ async def decide_approval(
         ).scalar_one_or_none()
         if schedule:
             schedule.status = resource_status_for_decision(data.decision, schedule=True)
+
+    if approved_scan_id:
+        # Validate again at decision time because scope or asset approval may
+        # have changed while the request was waiting in the queue.
+        from api.routes.scans import _validate_scan_ready
+        await db.flush()
+        readiness = await _validate_scan_ready(db, scan)
+        if not readiness["valid"]:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "message": "Scan approval cannot be completed because the request is no longer ready",
+                    "blocking_reasons": readiness["blocking_reasons"],
+                },
+            )
 
     db.add(AuditLog(
         scan_id=approval.scan_id,
@@ -127,4 +158,11 @@ async def decide_approval(
     ))
     await db.commit()
     await db.refresh(approval)
+
+    # Approval is the launch authorization. Once it is recorded, dispatch the
+    # scan immediately so the requester never has to return and click Start.
+    if approved_scan_id:
+        from api.routes.scans import start_scan
+        await start_scan(approved_scan_id, db, current_user)
+
     return approval

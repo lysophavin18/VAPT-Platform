@@ -6,7 +6,8 @@ from database.models import Asset, Engagement, Finding, Project, Scan, ScanSched
 
 
 def has_global_project_access(user: User) -> bool:
-    return user.role in ("admin", "manager", "security_team")
+    # The existing System Administrator role is the platform superadmin.
+    return user.role == "admin"
 
 
 def project_access_clause(user: User):

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from database.models import AuditLog, Project
-from auth import get_project_or_404, require_user, User, require_manager
+from auth import get_project_or_404, project_access_clause, require_user, User, require_manager
 from api.schemas import ProjectCreate, ProjectUpdate, ProjectResponse
 
 router = APIRouter()
@@ -53,9 +53,7 @@ async def list_projects(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_user),
 ):
-    query = select(Project)
-    if current_user.role not in ("admin", "manager"):
-        query = query.where(Project.owner_id == current_user.id)
+    query = select(Project).where(project_access_clause(current_user))
     if status_filter:
         query = query.where(Project.status == status_filter)
     query = query.order_by(Project.created_at.desc())

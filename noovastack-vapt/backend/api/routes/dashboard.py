@@ -129,7 +129,7 @@ def _change(current: int | float, previous: int | float):
 
 
 def _is_admin(user: User):
-    return user.role in ("admin", "manager")
+    return has_global_project_access(user)
 
 
 def _project_filter(user: User, project_id: str | None):

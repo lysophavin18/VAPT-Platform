@@ -4,6 +4,21 @@ NoovaStack VAPT is an AI-assisted Vulnerability Assessment and Penetration Testi
 
 The platform is designed for security teams, IT administrators, QA teams, developers, and technical managers who need repeatable, auditable, and safety-controlled security assessments.
 
+## Documentation Wiki
+
+The maintained documentation set is available in [`docs/README.md`](docs/README.md):
+
+- [User Guide](docs/USER_GUIDE.md)
+- [Administrator Guide](docs/ADMIN_GUIDE.md)
+- [Developer Guide](docs/DEVELOPER_GUIDE.md)
+- [API and Integration Guide](docs/API_INTEGRATION.md)
+- [Production Deployment Guide](docs/PRODUCTION_DEPLOYMENT.md)
+- [Operations Runbook](docs/OPERATIONS_RUNBOOK.md)
+- [Security Model](docs/SECURITY_MODEL.md)
+- [Troubleshooting](docs/TROUBLESHOOTING.md)
+
+The Docker Compose stack is a development and lab baseline. Read the production guide and its readiness gaps before deploying it to an internet-facing environment.
+
 ## Product Scope
 
 NoovaStack VAPT supports the end-to-end assessment lifecycle:

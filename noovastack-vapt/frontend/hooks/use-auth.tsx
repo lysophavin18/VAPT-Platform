@@ -3,6 +3,7 @@
 import { createContext, ReactNode, useContext, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
+import { useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api-client';
 import type { User } from '@/types';
 
@@ -18,6 +19,7 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -75,6 +77,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function login(email: string, password: string) {
     const data = await api.login(email, password);
     const profile = await api.me(data.access_token);
+    await queryClient.cancelQueries();
+    queryClient.clear();
     sessionStorage.setItem('noovastack.token', data.access_token);
     sessionStorage.setItem('noovastack.user', JSON.stringify(profile));
     setToken(data.access_token);
@@ -84,6 +88,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function logout() {
+    await queryClient.cancelQueries();
+    queryClient.clear();
     if (token) await api.logout(token).catch(() => undefined);
     sessionStorage.removeItem('noovastack.token');
     sessionStorage.removeItem('noovastack.user');
