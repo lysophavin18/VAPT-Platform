@@ -22,7 +22,7 @@ FROM golang:alpine AS pdtools
 # renovate: datasource=go depName=github.com/projectdiscovery/nuclei/v3
 ARG NUCLEI_VERSION=v3.11.1
 # renovate: datasource=go depName=github.com/projectdiscovery/subfinder/v2
-ARG SUBFINDER_VERSION=v2.16.0
+ARG SUBFINDER_VERSION=v2.17.0
 # renovate: datasource=go depName=github.com/projectdiscovery/httpx
 ARG HTTPX_VERSION=v1.12.0
 # renovate: datasource=go depName=github.com/projectdiscovery/dnsx
@@ -54,7 +54,7 @@ RUN apk add --no-cache libpcap-dev build-base \
 
 FROM alpine:3.22 AS trivy-dl
 # renovate: datasource=github-releases depName=aquasecurity/trivy
-ARG TRIVY_VERSION=0.75.0
+ARG TRIVY_VERSION=0.76.1
 RUN apk add --no-cache curl tar \
     && curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
        | tar -xz -C /usr/local/bin trivy \
@@ -62,7 +62,7 @@ RUN apk add --no-cache curl tar \
 
 FROM alpine:3.22 AS grype-dl
 # renovate: datasource=github-releases depName=anchore/grype
-ARG GRYPE_VERSION=0.120.1
+ARG GRYPE_VERSION=0.121.0
 RUN apk add --no-cache curl tar \
     && curl -fsSL "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" \
        | tar -xz -C /usr/local/bin grype \
@@ -108,7 +108,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # renovate: datasource=pypi depName=wapiti3
-ARG WAPITI_VERSION=3.2.4
+ARG WAPITI_VERSION=3.3.2
 RUN python -m venv /opt/wapiti \
     && /opt/wapiti/bin/pip install --no-cache-dir wapiti3==${WAPITI_VERSION} \
     && ln -s /opt/wapiti/bin/wapiti /usr/local/bin/wapiti
@@ -124,7 +124,7 @@ ARG BANDIT_VERSION=1.9.4
 # renovate: datasource=pypi depName=pip-audit
 ARG PIP_AUDIT_VERSION=2.10.1
 # renovate: datasource=pypi depName=semgrep
-ARG SEMGREP_VERSION=1.180.0
+ARG SEMGREP_VERSION=1.182.0
 RUN python -m venv /opt/security-tools \
     && /opt/security-tools/bin/pip install --no-cache-dir bandit==${BANDIT_VERSION} pip-audit==${PIP_AUDIT_VERSION} semgrep==${SEMGREP_VERSION} \
     && ln -s /opt/security-tools/bin/bandit  /usr/local/bin/bandit \
