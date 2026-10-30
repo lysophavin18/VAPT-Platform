@@ -1,4 +1,4 @@
-FROM alpine:3.22 AS depx
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS depx
 
 # renovate: datasource=github-releases depName=projectdiscovery/depx
 ARG DEPX_VERSION=0.1.1
@@ -16,7 +16,7 @@ RUN apk add --no-cache ca-certificates curl unzip \
     && unzip -q "$archive" -d /tmp/depx \
     && install -m 0755 /tmp/depx/depx /usr/local/bin/depx
 
-FROM golang:alpine AS pdtools
+FROM golang:alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571b0507f3deb AS pdtools
 
 # Scanner versions are pinned so upgrades arrive as reviewed Renovate PRs (see /renovate.json).
 # renovate: datasource=go depName=github.com/projectdiscovery/nuclei/v3
@@ -52,7 +52,7 @@ RUN apk add --no-cache ca-certificates git \
 RUN apk add --no-cache libpcap-dev build-base \
     && CGO_ENABLED=1 go install -ldflags '-extldflags "-static"' github.com/projectdiscovery/naabu/v2/cmd/naabu@${NAABU_VERSION}
 
-FROM alpine:3.22 AS trivy-dl
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS trivy-dl
 # renovate: datasource=github-releases depName=aquasecurity/trivy
 ARG TRIVY_VERSION=0.75.0
 RUN apk add --no-cache curl tar \
@@ -60,7 +60,7 @@ RUN apk add --no-cache curl tar \
        | tar -xz -C /usr/local/bin trivy \
     && chmod +x /usr/local/bin/trivy
 
-FROM alpine:3.22 AS grype-dl
+FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS grype-dl
 # renovate: datasource=github-releases depName=anchore/grype
 ARG GRYPE_VERSION=0.120.1
 RUN apk add --no-cache curl tar \
