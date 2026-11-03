@@ -23,6 +23,8 @@ app = Celery(
         "workers.tasks_ai",
         "workers.tasks_monitoring",
         "workers.tasks_cve",
+        "workers.tasks_telegram",
+        "workers.tasks_email",
     ],
 )
 
@@ -55,6 +57,8 @@ app.conf.update(
         "workers.tasks_ai.*": {"queue": "ai"},
         "workers.tasks_monitoring.*": {"queue": "monitoring"},
         "workers.tasks_cve.*": {"queue": "reporting"},
+        "workers.tasks_telegram.*": {"queue": "reporting"},
+        "workers.tasks_email.*": {"queue": "reporting"},
     },
     beat_schedule={
         "check-scheduled-scans": {
@@ -65,14 +69,26 @@ app.conf.update(
             "task": "workers.tasks_monitoring.run_due_domain_monitors",
             "schedule": 3600.0,   # dispatcher runs every hour; per-monitor interval controls actual frequency
         },
-        "daily-cve-intelligence-sync": {
-            "task": "workers.tasks_cve.sync_daily_intelligence",
-            "schedule": 86400.0,
+        "two-hour-cve-intelligence-sync": {
+            "task": "workers.tasks_cve.sync_recent_intelligence",
+            "schedule": 7200.0,
             "args": [2, 2000],
+        },
+        "two-hour-cisa-kev-sync": {
+            "task": "workers.tasks_cve.sync_kev_catalog",
+            "schedule": 7200.0,
         },
         "daily-nuclei-template-update": {
             "task": "workers.tasks_cve.update_nuclei_templates",
             "schedule": 86400.0,
+        },
+        "telegram-activity-notifications": {
+            "task": "workers.tasks_telegram.deliver_activity_notifications",
+            "schedule": 30.0,
+        },
+        "email-activity-notifications": {
+            "task": "workers.tasks_email.deliver_activity_notifications",
+            "schedule": 60.0,
         },
     },
 )

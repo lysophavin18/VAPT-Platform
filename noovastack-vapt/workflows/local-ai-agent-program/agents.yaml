@@ -1,8 +1,8 @@
 model:
-  provider: ollama
-  base_url: http://192.168.220.204:11434/v1
-  model: qwen3-coder:30b-64k
-  context_window: 64K
+  provider: noovastack-local
+  base_url: https://chat.noovastack.com/api
+  model: qwen3.6-coder:35b-32k
+  context_window: 32K
   temperature: 0.2
   max_output_tokens: 4096
 
@@ -14,42 +14,42 @@ routing:
 
 agents:
   engagement_planner:
-    model: qwen3-coder:30b-64k
+    model: qwen3.6-coder:35b-32k
     prompt: prompts/engagement_planner.md
     tools: [get_project, get_engagement, get_scope, get_rules_of_engagement]
     output_schema: schemas/assessment_plan.json
     rag_collections: [company_security_standards, project_documents, engagement_documents]
 
   finding_judge:
-    model: qwen3-coder:30b-64k
+    model: qwen3.6-coder:35b-32k
     prompt: prompts/finding_judge.md
     tools: [get_finding, get_evidence, search_related_findings]
     output_schema: schemas/finding_judgment.json
     rag_collections: [verified_findings, global_security_references, approved_remediation]
 
   remediation_advisor:
-    model: qwen3-coder:30b-64k
+    model: qwen3.6-coder:35b-32k
     prompt: prompts/remediation_advisor.md
     tools: [get_finding, get_evidence, get_approved_remediation, search_security_references]
     output_schema: schemas/remediation_advice.json
     rag_collections: [approved_remediation, company_security_standards, global_security_references]
 
   report_writer:
-    model: qwen3-coder:30b-64k
+    model: qwen3.6-coder:35b-32k
     prompt: prompts/report_writer.md
     tools: [get_verified_findings, get_scope, get_report_template]
     output_schema: schemas/report_draft.json
     rag_collections: [report_templates, verified_findings, company_security_standards]
 
   retest_analyst:
-    model: qwen3-coder:30b-64k
+    model: qwen3.6-coder:35b-32k
     prompt: prompts/retest_analyst.md
     tools: [get_finding, get_original_evidence, get_retest_evidence]
     output_schema: schemas/retest_review.json
     rag_collections: [verified_findings, approved_remediation]
 
   pentest_agent:
-    model: qwen3-coder:30b-64k
+    model: qwen3.6-coder:35b-32k
     prompt: prompts/pentest_agent.md
     tools:
       - get_project
@@ -73,7 +73,7 @@ agents:
     execution_boundary: platform_worker_layer_only
 
   internal_autonomous_assessment_agent:
-    model: qwen3-coder:30b-64k
+    model: qwen3.6-coder:35b-32k
     prompt: prompts/internal_autonomous_assessment_agent.md
     tools:
       - get_project

@@ -36,7 +36,7 @@ The included Docker Compose file is intended for local development and controlle
 4. Isolate scanner workers from application and data networks.
 5. Add database migrations, tested backups, centralized logs, metrics, alerts, and disaster recovery.
 6. Complete MFA or SSO before allowing privileged internet-facing access.
-7. Complete API-token authentication and scope enforcement before using generated API tokens for automation.
+7. Complete API-token authentication and scope enforcement before using generated API tokens for automation.    
 8. Add token revocation/session invalidation if immediate logout is a policy requirement.
 
 See [Production Deployment](PRODUCTION_DEPLOYMENT.md) for the complete checklist.

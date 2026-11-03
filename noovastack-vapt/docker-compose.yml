@@ -72,15 +72,21 @@ services:
       - JWT_EXPIRATION=3600
       - CELERY_BROKER_URL=redis://:noovastack_redis_2024!@redis:6379/1
       - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@redis:6379/2
-      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
-      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com/v1}
+      - NVD_API_KEY=${NVD_API_KEY:-}
+      - CVE_HTTP_TIMEOUT_SECONDS=${CVE_HTTP_TIMEOUT_SECONDS:-45}
+      - CVE_STALE_AFTER_HOURS=${CVE_STALE_AFTER_HOURS:-4}
+      - NVD_REQUEST_DELAY_SECONDS=${NVD_REQUEST_DELAY_SECONDS:-6}
+      - AI_PROVIDER=${AI_PROVIDER:-noovastack-local}
+      - AI_BASE_URL=${AI_BASE_URL:-https://chat.noovastack.com/api}
       - AI_API_KEY=${AI_API_KEY:-}
-      - AI_MODEL=${AI_MODEL:-deepseek-chat}
+      - AI_MODEL=${AI_MODEL:-qwen3.6-coder:35b-32k}
       - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-240}
       - AI_MAX_OUTPUT_TOKENS=${AI_MAX_OUTPUT_TOKENS:-4096}
       - AI_TEMPERATURE=${AI_TEMPERATURE:-0.2}
+      - AI_ENV_FILE=/app-config/.env
     volumes:
       - ./backend:/app
+      - ./.env:/app-config/.env
       - scan_results:/app/results
     ports:
       - "8002:8000"
@@ -105,11 +111,15 @@ services:
       - PYTHONPATH=/app
       - CELERY_BROKER_URL=redis://:noovastack_redis_2024!@127.0.0.1:6381/1
       - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@127.0.0.1:6381/2
+      - NVD_API_KEY=${NVD_API_KEY:-}
+      - CVE_HTTP_TIMEOUT_SECONDS=${CVE_HTTP_TIMEOUT_SECONDS:-45}
+      - CVE_STALE_AFTER_HOURS=${CVE_STALE_AFTER_HOURS:-4}
+      - NVD_REQUEST_DELAY_SECONDS=${NVD_REQUEST_DELAY_SECONDS:-6}
       - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY to a secure random value of at least 32 characters}
-      - AI_PROVIDER=${AI_PROVIDER:-deepseek}
-      - AI_BASE_URL=${AI_BASE_URL:-https://api.deepseek.com/v1}
+      - AI_PROVIDER=${AI_PROVIDER:-noovastack-local}
+      - AI_BASE_URL=${AI_BASE_URL:-https://chat.noovastack.com/api}
       - AI_API_KEY=${AI_API_KEY:-}
-      - AI_MODEL=${AI_MODEL:-deepseek-chat}
+      - AI_MODEL=${AI_MODEL:-qwen3.6-coder:35b-32k}
       - AI_TIMEOUT_SECONDS=${AI_TIMEOUT_SECONDS:-240}
       - AI_MAX_OUTPUT_TOKENS=${AI_MAX_OUTPUT_TOKENS:-4096}
       - AI_TEMPERATURE=${AI_TEMPERATURE:-0.2}
@@ -138,6 +148,10 @@ services:
       - PYTHONPATH=/app
       - CELERY_BROKER_URL=redis://:noovastack_redis_2024!@redis:6379/1
       - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@redis:6379/2
+      - NVD_API_KEY=${NVD_API_KEY:-}
+      - CVE_HTTP_TIMEOUT_SECONDS=${CVE_HTTP_TIMEOUT_SECONDS:-45}
+      - CVE_STALE_AFTER_HOURS=${CVE_STALE_AFTER_HOURS:-4}
+      - NVD_REQUEST_DELAY_SECONDS=${NVD_REQUEST_DELAY_SECONDS:-6}
       - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY to a secure random value of at least 32 characters}
     volumes:
       - ./backend:/app

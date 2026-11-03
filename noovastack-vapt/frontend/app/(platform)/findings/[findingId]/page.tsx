@@ -1,6 +1,9 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
+import { PackageCheck } from 'lucide-react';
+import { toast } from 'sonner';
 import { useParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { PageHeader } from '@/components/layout/page-header';
@@ -11,6 +14,7 @@ import { useAuth } from '@/hooks/use-auth';
 import { formatDate } from '@/lib/utils';
 import { api } from '@/lib/api-client';
 import type { FindingComment } from '@/types';
+import type { PatchRecord } from '@/types';
 
 const TYPE_LABELS: Record<string, { label: string; color: string }> = {
   remediation: { label: 'Remediation', color: 'bg-green-100 text-green-800' },
@@ -132,6 +136,15 @@ export default function FindingDetailPage() {
   const params = useParams<{ findingId: string }>();
   const finding = useFinding(params.findingId);
   const item = finding.data;
+  const { token } = useAuth();
+  const queryClient = useQueryClient();
+  const patches = useQuery({ queryKey: ['patches'], queryFn: () => api.patches(token), enabled: Boolean(token) });
+  const linkedPatch = (patches.data ?? []).find((patch: PatchRecord) => patch.finding_id === params.findingId);
+  const createPatch = useMutation({
+    mutationFn: () => api.createPatchFromFinding(params.findingId, token),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['patches'] }); await finding.refetch(); toast.success('Patch plan created and linked to this finding'); },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Unable to create patch plan'),
+  });
 
   return (
     <>
@@ -139,6 +152,7 @@ export default function FindingDetailPage() {
         title={item?.title ?? 'Finding Details'}
         description="Plain-language explanation, evidence, impact, remediation guidance, technical details, AI draft, review history, and retest."
         breadcrumbs={[{ href: '/findings', label: 'Findings' }, { label: item?.title ?? params.findingId }]}
+        actions={linkedPatch ? <Link href="/patches"><button className="inline-flex items-center gap-2 rounded-lg bg-[#155EEF] px-4 py-2 text-sm font-medium text-white"><PackageCheck className="h-4 w-4" /> Open Patch Plan</button></Link> : <button onClick={() => createPatch.mutate()} disabled={createPatch.isPending || !item} className="inline-flex items-center gap-2 rounded-lg bg-[#155EEF] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"><PackageCheck className="h-4 w-4" /> {createPatch.isPending ? 'Creating...' : 'Create Patch Plan'}</button>}
       />
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">

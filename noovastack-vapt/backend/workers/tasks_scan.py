@@ -4,6 +4,7 @@ NoovaStack VAPT Platform - Scan Execution Tasks
 import asyncio
 import json
 import logging
+import re
 import shutil
 import sys
 import tempfile
@@ -12,7 +13,7 @@ from pathlib import Path
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 from celery import shared_task
-from scans.tools import EXTERNAL_TOOL_MODULES, MODULE_TO_TOOL
+from scans.tools import EXTERNAL_TOOL_MODULES, MODULE_TO_TOOL, SCANNER_TOOL_CATALOG
 
 APP_ROOT = Path(__file__).resolve().parents[1]
 if str(APP_ROOT) not in sys.path:
@@ -24,6 +25,44 @@ MODULE_TOOL_ALIASES = {
     "tls_services": "sslscan",
     "dependency_scan": "pip_audit",
 }
+
+
+TOOL_RUNTIME_REQUIREMENTS = {
+    "semgrep": "Repository path required",
+    "bandit": "Repository path required",
+    "pip-audit": "Repository path required",
+    "depx": "Repository path required",
+    "trivy": "Container image or repository path required",
+    "grype": "Container image or repository path required",
+    "shodan": "Shodan API credentials required",
+    "prowler": "Cloud provider credentials required",
+    "scoutsuite": "Cloud provider credentials required",
+    "zap": "Explicit active-scan authorization required",
+}
+
+
+@shared_task(name="workers.tasks_scan.scanner_tool_health")
+def scanner_tool_health() -> dict:
+    """Report scanner binary availability from the worker that executes scans."""
+    tools = []
+    for tool in SCANNER_TOOL_CATALOG:
+        binary = _resolve_tool_binary(tool["id"])
+        tools.append({
+            **tool,
+            "available": bool(binary),
+            "status": "ready" if binary else "missing",
+            "runtime_requirement": TOOL_RUNTIME_REQUIREMENTS.get(tool["id"]),
+        })
+
+    available = sum(1 for tool in tools if tool["available"])
+    return {
+        "worker_status": "online",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "total": len(tools),
+        "available": available,
+        "missing": len(tools) - available,
+        "tools": tools,
+    }
 
 
 @shared_task(name="workers.tasks_scan.run_scan", bind=True)
@@ -758,66 +797,144 @@ async def _run_limited_command(cmd: list[str], timeout: int = 60) -> dict:
 
 async def _run_cve_enrichment(module_name: str, scan, asset_ids, session) -> dict:
     from database.models import Asset, CVERecord, ScanModule
-    from sqlalchemy import select
+    from sqlalchemy import Text, cast, or_, select
 
     asset_result = await session.execute(select(Asset).where(Asset.id.in_(asset_ids)))
     assets = asset_result.scalars().all()
     module_result = await session.execute(select(ScanModule).where(ScanModule.scan_id == scan.id))
     modules = module_result.scalars().all()
-    keywords = _cve_keywords_from_assets_and_modules(assets, modules)
+    components = _cve_components_from_assets_and_modules(assets, modules)
     matches = []
     issues_found = 0
 
-    for keyword in keywords[:20]:
-        if len(keyword) < 4:
+    seen = set()
+    for component in components[:30]:
+        product = component["product"]
+        version = component.get("version")
+        if len(product) < 3:
             continue
         result = await session.execute(
             select(CVERecord)
-            .where(CVERecord.description.ilike(f"%{keyword}%"))
+            .where(or_(
+                cast(CVERecord.configurations, Text).ilike(f"%:{product}:%"),
+                CVERecord.description.ilike(f"%{product}%"),
+            ))
             .order_by(CVERecord.published_at.desc())
-            .limit(5)
+            .limit(100)
         )
         for cve in result.scalars().all():
-            matches.append({"keyword": keyword, "cve_id": cve.id, "severity": cve.severity, "cvss_score": cve.cvss_score})
-            if cve.severity in ("critical", "high") and assets:
+            match = _match_cve_configuration(cve.configurations or [], product, version)
+            if not match and product.lower() not in (cve.description or "").lower():
+                continue
+            confidence = "version_match" if match and version else "possible"
+            key = (cve.id, product, version)
+            if key in seen:
+                continue
+            seen.add(key)
+            matches.append({"product": product, "version": version, "cve_id": cve.id, "severity": cve.severity, "cvss_score": cve.cvss_score, "confidence": confidence})
+            if confidence == "version_match" and cve.severity in ("critical", "high") and assets:
                 await _add_finding(
                     session,
                     scan.id,
                     assets[0].id,
                     f"Potential CVE Exposure: {cve.id}",
-                    f"The synced CVE database contains {cve.id} matching observed technology keyword '{keyword}'. Validate whether the affected product/version is present before remediation tracking.",
+                    f"The observed component {product} {version} matches an affected version range for {cve.id}. Validate the package provenance and runtime exposure before confirming the finding.",
                     "high" if cve.severity == "critical" else cve.severity,
                     "A06:2021 - Vulnerable and Outdated Components",
                     (cve.cwes or ["CWE-1104"])[0],
                     cve.cvss_score or 0.0,
                     "Confirm the affected product and version, then upgrade or apply the vendor mitigation referenced by the CVE advisory.",
                     "cve_enrichment",
-                    {"cve_id": cve.id, "keyword": keyword, "references": (cve.references or [])[:5]},
+                    {"cve_id": cve.id, "product": product, "version": version, "confidence": confidence, "matched_cpe": match.get("criteria") if match else None, "references": (cve.references or [])[:5]},
                     "cve_correlation",
                 )
                 issues_found += 1
 
-    return {"module": module_name, "tool": "local_cve_database", "checks_performed": len(keywords), "issues_found": issues_found, "matches": matches[:50]}
+    return {"module": module_name, "tool": "local_cve_database", "checks_performed": len(components), "issues_found": issues_found, "matches": matches[:100]}
 
 
-def _cve_keywords_from_assets_and_modules(assets: list, modules: list) -> list[str]:
-    keywords = set()
-    ignored = {"http", "https", "unknown", "nginx", "apache"}
+def _cve_components_from_assets_and_modules(assets: list, modules: list) -> list[dict]:
+    components = set()
+    ignored = {"http", "https", "unknown", "tcp", "service"}
+
+    def add(value, explicit_version=None):
+        if not value:
+            return
+        text = str(value).strip().lower()
+        match = re.match(r"^([a-z0-9_.+-]+)(?:[/\s_-]+v?([0-9][a-z0-9_.+-]*))?", text)
+        if not match or match.group(1) in ignored:
+            return
+        product = match.group(1).replace(" ", "_")
+        version = str(explicit_version or match.group(2) or "").strip() or None
+        components.add((product, version))
+
     for asset in assets:
         technology = asset.technology or {}
-        for value in technology.values() if isinstance(technology, dict) else []:
-            for token in str(value).replace("/", " ").replace(";", " ").split():
-                if token.lower() not in ignored and not token.replace(".", "").isdigit():
-                    keywords.add(token.strip().lower())
+        if isinstance(technology, dict):
+            for key, value in technology.items():
+                if isinstance(value, dict):
+                    add(value.get("product") or value.get("name") or key, value.get("version"))
+                else:
+                    add(value)
     for module in modules:
         output = module.output or {}
         for observation in output.get("observations") or []:
             for port in observation.get("open_ports") or []:
-                for key in ("product", "version", "server", "x_powered_by", "nmap_service"):
-                    value = port.get(key)
-                    if value and str(value).lower() not in ignored:
-                        keywords.add(str(value).split()[0].strip().lower())
-    return sorted(keywords)
+                add(port.get("product") or port.get("server") or port.get("x_powered_by") or port.get("nmap_service"), port.get("version"))
+    return [{"product": product, "version": version} for product, version in sorted(components)]
+
+
+def _version_parts(value: str | None) -> tuple:
+    if not value:
+        return ()
+    return tuple(int(part) if part.isdigit() else part for part in re.split(r"[._+-]", value.lower()) if part != "")
+
+
+def _version_in_range(version: str, item: dict) -> bool:
+    current = _version_parts(version)
+    checks = (
+        ("versionStartIncluding", lambda left, right: left >= right),
+        ("versionStartExcluding", lambda left, right: left > right),
+        ("versionEndIncluding", lambda left, right: left <= right),
+        ("versionEndExcluding", lambda left, right: left < right),
+    )
+    try:
+        return all(operator(current, _version_parts(item[field])) for field, operator in checks if item.get(field))
+    except TypeError:
+        return False
+
+
+def _match_cve_configuration(configurations: list, product: str, version: str | None) -> dict | None:
+    def walk(node):
+        for item in node.get("cpeMatch") or []:
+            if not item.get("vulnerable", True):
+                continue
+            criteria = item.get("criteria") or item.get("cpe23Uri") or ""
+            parts = criteria.split(":")
+            if len(parts) < 6 or parts[4].lower().replace("-", "_") != product.lower().replace("-", "_"):
+                continue
+            cpe_version = parts[5]
+            if version and cpe_version not in ("*", "-") and _version_parts(version) != _version_parts(cpe_version):
+                continue
+            if version and not _version_in_range(version, item):
+                continue
+            return {**item, "criteria": criteria}
+        for child in node.get("nodes") or []:
+            found = walk(child)
+            if found:
+                return found
+        return None
+
+    for configuration in configurations:
+        found = walk(configuration)
+        if found:
+            return found
+    return None
+
+
+def _cve_keywords_from_assets_and_modules(assets: list, modules: list) -> list[str]:
+    """Compatibility helper retained for integrations that consume keyword lists."""
+    return sorted({item["product"] for item in _cve_components_from_assets_and_modules(assets, modules)})
 
 
 async def _run_wapiti_scan(module_name: str, scan, asset_ids, session) -> dict:
@@ -1626,7 +1743,7 @@ async def _ingest_tool_findings(session, scan, asset, tool_id: str, observation:
 
 
 async def _add_finding(session, scan_id, asset_id, title, description, severity, owasp_category, cwe_id, cvss_score, remediation, found_by_tool, evidence_metadata=None, evidence_type="candidate_observation"):
-    from database.models import Evidence, Finding
+    from database.models import Asset, AuditLog, Evidence, Finding, Scan
     from sqlalchemy import select
     import hashlib
 
@@ -1666,6 +1783,28 @@ async def _add_finding(session, scan_id, asset_id, title, description, severity,
         evidence_type=evidence_type,
         hash_value=evidence_hash,
         metadata_json=metadata,
+    ))
+    context = (await session.execute(
+        select(Scan.project_id, Scan.name, Asset.value)
+        .select_from(Scan)
+        .outerjoin(Asset, Asset.id == asset_id)
+        .where(Scan.id == scan_id)
+    )).one_or_none()
+    session.add(AuditLog(
+        project_id=context.project_id if context else None,
+        scan_id=scan_id,
+        event_type="finding",
+        action="finding_detected",
+        details={
+            "finding_id": str(finding.id),
+            "title": title,
+            "severity": str(severity).lower(),
+            "cvss_score": cvss_score,
+            "status": "candidate",
+            "scan_name": context.name if context else None,
+            "asset": str(context.value) if context and context.value else None,
+            "found_by_tool": found_by_tool,
+        },
     ))
 
 async def _update_scan_status(scan_id: str, status: str):

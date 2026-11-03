@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from database.models import AuditLog, Project
-from auth import get_project_or_404, project_access_clause, require_user, User, require_manager
+from auth import get_project_or_404, project_access_clause, require_user, User, require_analyst, require_manager
 from api.schemas import ProjectCreate, ProjectUpdate, ProjectResponse
 
 router = APIRouter()
@@ -18,7 +18,7 @@ async def create_project(
     data: ProjectCreate,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_user),
+    current_user: User = Depends(require_analyst),
 ):
     project = Project(
         name=data.name,

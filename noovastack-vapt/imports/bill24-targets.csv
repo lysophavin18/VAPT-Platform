@@ -1,0 +1,71 @@
+name,value,asset_type
+Bank Gateway,http://bgw-portal.bill24.net,url
+Invoicing,http://bill24.net,url
+Biller Tool,http://billertool.bill24.net,url
+Core API,http://coreapi.bill24.net,url
+SDK API,http://sdkapi.bill24.net,url
+Security API,http://securityapi.bill24.net,url
+Socket Server,http://socketserver.bill24.net,url
+Supplier API,http://supplierapi.bill24.net,url
+Checkout API,http://checkoutapi.bill24.net,url
+Cholkiri,http://cholkiri-wss.bill24.net,url
+Ecoda,http://ecoda.bill24.net,url
+WSS,http://fwuc-wss.bill24.net,url
+Web SDK,http://websdk.bill24.net,url
+Mobile Topup API,http://mobiletopupapi.bill24.net,url
+MWM,http://mwm.bill24.net,url
+QLM,http://qlm.bill24.net,url
+mapi.bankgateway.net,http://mapi.bankgateway.net,url
+ibillflow-payment.bill24.net,http://ibillflow-payment.bill24.net,url
+Good vibe POS,https://goodvibes-pos.bill24.io,url
+KPI Management,https://kpimanagement.bill24.io,url
+bmap.bill24.io,https://bmap.bill24.io,url
+linkbills.bill24.io,https://linkbills.bill24.io,url
+Hub Portal,https://hubportal.bill24.io,url
+Portal,https://portal.bill24.io,url
+Billflow,https://billflow.bill24.io,url
+Object Storage,https://objectstorage.bill24.io,url
+Bill24 Main Website,https://bill24.io,url
+Exchange Rate API,https://exchangerateapi.bill24.io,url
+Company,https://company.bill24.io,url
+Billflow API,https://api-billflow.bill24.io,url
+Bank API,https://bankapi.bill24.io,url
+Business Docs,https://business-docs.bill24.io,url
+Bank Direct Debit,https://bank-direct-debit.bill24.io,url
+Flows,https://flows.bill24.io,url
+Bank Docs,https://bank-docs.bill24.io,url
+Classic Billflow,https://classic-billflow.bill24.io,url
+Billflow API,https://billflow-api.bill24.io,url
+Notification Console,https://notification-console.bill24.io,url
+Billflow API,https://billflowapi.bill24.io,url
+Biller Portal Docs,https://biller-portal-docs.bill24.io,url
+Identity API,https://identityapi.bill24.io,url
+Portal Location API,https://portallocationapi.bill24.io,url
+Portal Media API,https://portalmediaapi.bill24.io,url
+PGW Module API,https://pgwmoduleapi.bill24.io,url
+Authentication API,https://authenticationapi.bill24.io,url
+Media,https://media.bill24.io,url
+Socket Server,https://socketserve.bill24.io,url
+Checkout Page,https://checkoutpage.bill24.io,url
+Management API,https://managementapi.bill24.io,url
+Merchant API,https://merchantapi.bill24.io,url
+Bank Docs Checkout,https://bank-docs-checkout.bill24.io,url
+Bill Mobile,https://billmobile.bill24.io,url
+Bill24 Website,https://www.bill24.io,url
+Mobile API,https://mobileapi.bill24.io,url
+Get Summary,https://get-summary.bill24.io,url
+Invoice Docs,https://invoice-docs.bill24.io,url
+OnlyOffice Docs,https://doc.bill24.io,url
+Hub Portal Manual,https://hubportal-manual.bill24.io,url
+Payment Method Bank,https://paymentmethodbank.bill24.io,url
+Entertainment Services,https://entertainment-services.bill24.io,url
+Notification API,https://notificationapi.bill24.io,url
+Socket Server,https://socketserver.bill24.io,url
+Payments,https://payments.bill24.io,url
+Speed Account,http://speedaccount.com,url
+Loan,http://loan.speedaccount.com,url
+LS,http://ls.speedaccount.com,url
+LS Chain,http://ls-chain.speedaccount.com,url
+LS Condo,http://ls-condo.speedaccount.com,url
+LS Socket,http://ls-socket.speedaccount.com,url
+QE (FX),http://qe-fx.speedaccount.com,url

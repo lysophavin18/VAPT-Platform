@@ -289,13 +289,13 @@ async def get_asset_graph(
 
     nodes = []
     edges = []
-    edge_set: set[tuple[str, str]] = set()
+    edge_set: set[tuple[str, str, str]] = set()
 
-    def add_edge(src: str, tgt: str):
-        key = (src, tgt)
+    def add_edge(src: str, tgt: str, relationship: str):
+        key = (src, tgt, relationship)
         if key not in edge_set:
             edge_set.add(key)
-            edges.append({"source": src, "target": tgt})
+            edges.append({"source": src, "target": tgt, "relationship": relationship})
 
     # Build lookup maps
     id_map = {str(a.id): a for a in assets}
@@ -311,11 +311,20 @@ async def get_asset_graph(
             "label": a.name or a.value,
             "type": a.asset_type,
             "scope_status": a.scope_status,
+            "value": a.value,
+            "source": a.source,
+            "discovery_method": a.discovery_method,
+            "environment": a.environment,
+            "approval_status": a.approval_status,
+            "tags": a.tags or [],
+            "technology": a.technology or {},
+            "ports_services": a.ports_services or {},
+            "last_observed_at": a.last_observed_at.isoformat() if a.last_observed_at else None,
         })
 
         # 1. Explicit parent link
         if a.parent_asset_id and str(a.parent_asset_id) in id_map:
-            add_edge(str(a.parent_asset_id), str(a.id))
+            add_edge(str(a.parent_asset_id), str(a.id), "PARENT_OF")
 
         v = (a.value or "").strip().lower()
 
@@ -326,7 +335,7 @@ async def get_asset_graph(
                     v.endswith(f".{domain_val}") or
                     v.lstrip("https://").lstrip("http://").split("/")[0].endswith(f".{domain_val}")
                 ):
-                    add_edge(domain_id, str(a.id))
+                    add_edge(domain_id, str(a.id), "HAS_SUBDOMAIN" if a.asset_type == "subdomain" else "EXPOSES_URL")
                     break
 
         # 3. Service (host:port) → its host asset
@@ -334,7 +343,7 @@ async def get_asset_graph(
             host = v.rsplit(":", 1)[0]
             host_id = value_map.get(host)
             if host_id and host_id != str(a.id):
-                add_edge(host_id, str(a.id))
+                add_edge(host_id, str(a.id), "RUNS_SERVICE")
 
         # 4. IP → domain/subdomain inferred from technology.resolved_from
         if a.asset_type == "ip_address" and isinstance(a.technology, dict):
@@ -342,6 +351,6 @@ async def get_asset_graph(
             if resolved_from:
                 parent_id = value_map.get(resolved_from)
                 if parent_id and parent_id != str(a.id):
-                    add_edge(parent_id, str(a.id))
+                    add_edge(parent_id, str(a.id), "RESOLVES_TO")
 
     return {"nodes": nodes, "edges": edges}

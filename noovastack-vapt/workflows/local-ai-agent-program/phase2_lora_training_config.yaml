@@ -1,8 +1,8 @@
 model:
-  name_or_path: /models/qwen3-coder-30b-base
+  name_or_path: /models/qwen3.6-coder-35b-base
   trust_remote_code: true
   torch_dtype: bfloat16
-  must_match_inference_base: qwen3-coder:30b-64k
+  must_match_inference_base: qwen3.6-coder:35b-32k
 
 dataset:
   train_file: data/noovastack_train.jsonl
@@ -33,7 +33,7 @@ lora:
   candidate_target_modules: [q_proj, k_proj, v_proj, o_proj, gate_proj, up_proj, down_proj]
 
 safety_notes:
-  - Do not begin with 64K-token examples.
+  - Do not begin with 32K-token examples.
   - Start with 4K-8K examples for normal agent tasks.
   - Use 8K-16K only for complex report/evidence tasks.
   - Keep customer data encrypted and sanitized before training transfer.

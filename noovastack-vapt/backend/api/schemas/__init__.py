@@ -363,7 +363,7 @@ class FindingResponse(BaseModel):
 
 
 class FindingStatusUpdate(BaseModel):
-    status: str = Field(pattern="^(confirmed|ready_for_retest|retesting|fixed|partially_fixed|not_fixed|cannot_verify|risk_accepted|false_positive|rejected)$")
+    status: str = Field(pattern="^(confirmed|patch_planned|remediation_in_progress|ready_for_retest|retesting|fixed|partially_fixed|not_fixed|cannot_verify|risk_accepted|false_positive|rejected)$")
 
 
 class FindingCommentCreate(BaseModel):

@@ -64,6 +64,41 @@
   - **Fix:** Use `sessionStorage` only (or httpOnly cookies); wrap `JSON.parse` in try/catch; validate token with `/auth/me` on load.
   - Location: `frontend/lib/api-client.ts:44`, `frontend/hooks/use-auth.tsx:25-35`
 
+### CVE intelligence freshness and correlation
+
+- [x] **HIGH** — Repair the daily CVE sync failure caused by writing `"system"` into the UUID `AuditLog.actor_id` column.
+  - Use `actor_id=None` for scheduled work and store `triggered_by: "system"` in audit details.
+  - Roll back the failed SQLAlchemy transaction before attempting to persist failure state.
+  - Ensure every exit path changes `cve_sync_state.status` from `running` to `success` or `failed`.
+  - Location: `backend/workers/tasks_cve.py:28-76`, `backend/database/models/__init__.py:494-505`
+- [x] **HIGH** — Recover the stale production CVE database after deploying the sync repair.
+  - Reset the stale `nvd` state, run a paginated 30-day recovery import, and verify `CVE-2026-98432` is stored. Use bounded older backfill windows when historical coverage is required.
+  - Record inserted, updated, rejected, and failed counts without deleting existing CVE records.
+  - Acceptance: latest local publication/modification timestamps agree with NVD and the last-success age is below four hours.
+- [x] **HIGH** — Replace the fixed publication-only window with a durable NVD modification cursor.
+  - Query `lastModStartDate`/`lastModEndDate` with a small overlap so new CVEs and later record changes are both captured.
+  - Advance the cursor only after all pages commit successfully; retain it after partial or failed runs.
+  - Paginate using `startIndex`, `resultsPerPage`, and `totalResults`; never silently truncate at 500 or 2,000 records.
+  - Location: `backend/workers/tasks_cve.py:45-68`
+- [x] **HIGH** — Make CVE synchronization resilient and observable.
+  - Run NVD modified-record synchronization every two hours.
+  - Add optional `NVD_API_KEY`, retry HTTP 429/5xx responses with bounded exponential backoff, and enforce request/task timeouts.
+  - Prevent concurrent runs with a database advisory lock or Redis lock and recover abandoned `running` states.
+  - Persist Celery job ID, trigger type, page progress, record counts, timestamps, and a sanitized error code/message.
+  - Alert when the last successful synchronization is older than four hours.
+  - Location: `backend/workers/celery_app.py:68-77`, `backend/config.py`, `backend/workers/tasks_cve.py`
+- [x] **HIGH** — Decouple CISA KEV synchronization from NVD synchronization.
+  - Run KEV as an independent task so an NVD failure cannot block it.
+  - Create placeholder local records for KEV CVE IDs not yet present instead of enriching only existing records.
+  - Persist KEV fields in structured columns or a dedicated table rather than only inside raw JSON.
+  - Location: `backend/workers/tasks_cve.py:79-124`
+- [x] **HIGH** — Replace keyword-only CVE correlation with product and version-aware matching.
+  - Normalize scan inventories to CPE for platforms/products and PURL for packages.
+  - Evaluate affected and fixed version ranges for Linux distributions, kernels, containers, and application dependencies.
+  - Use confidence states such as `possible`, `version_match`, and `confirmed`; never treat an alias or keyword match as proof of exposure.
+  - Preserve source advisory, matched component/version, fixed version, and matching evidence with each finding.
+  - Location: `backend/workers/tasks_scan.py:796-848`
+
 ---
 
 ## 🟠 MEDIUM — Should fix (maintainability / edge cases)
@@ -74,9 +109,21 @@
   - Location: `backend/api/routes/approvals.py:34-75`
 - [x] **MEDIUM** — Approval is sticky (`approved_by is not None`) for the life of the scan record.
   - Location: `backend/workers/tasks_scan.py:65`
-- [ ] **MEDIUM** — CVE sync runs a **blocking 45s httpx call in the request path** and leaks error detail.
-  - **Fix:** Move to a Celery task; return job id.
-  - Location: `backend/api/routes/cve.py:38-88`
+- [x] **MEDIUM** — CVE synchronization was moved out of the API request path into a Celery task and now returns a job ID.
+  - Location: `backend/api/routes/cve.py:35-48`, `backend/workers/tasks_cve.py:16-76`
+- [x] **MEDIUM** — Correct the manual-sync UI contract and expose durable job progress.
+  - Treat `POST /api/cve/sync` as queued work; display the returned job ID and poll status until success or failure.
+  - Do not display `records_synced` from the initial queued response.
+  - Add `GET /api/cve/jobs/{job_id}` or include active-job progress in `/api/cve/status`.
+  - Location: `frontend/lib/api-client.ts:331-332`, `frontend/app/(platform)/administration/page.tsx:173-182`
+- [x] **MEDIUM** — Add an administrator-only targeted CVE refresh for urgent advisories.
+  - Support importing one validated CVE ID, such as `CVE-2026-98432`, from the authoritative source without waiting for the periodic job.
+  - Audit the request and apply the same upsert, retry, and validation rules as scheduled synchronization.
+  - Location: `backend/api/routes/cve.py`, `backend/workers/tasks_cve.py`
+- [ ] **MEDIUM** — Add advisory-source ingestion and alias mapping for breaking vulnerability names.
+  - Store vendor advisories and aliases such as marketing/community names separately from authoritative CVE records.
+  - Consider CVE.org, OSV, GitHub Security Advisories, Linux/vendor security feeds, and CISA KEV with source attribution and deduplication.
+  - Never create a confirmed asset finding from news text alone.
 - [ ] **MEDIUM** — `local_chat` has **no rate limiting / per-user quota** and minimal prompt-injection guardrails.
   - Location: `backend/api/routes/ai_agents.py:177-250`
 - [x] **MEDIUM** — Untyped `dict` request bodies bypass schema validation.
@@ -85,7 +132,7 @@
   - **Fix:** Introduce Alembic.
   - Location: `backend/main.py:30-32`
 - [x] **MEDIUM** — AI agent "control plane" is **in-memory mock lists** on both sides; pause/resume/kill-switch/evidence don't persist or enforce anything.
-  - **Done:** agents, runs, tasks, activities, and recommendations are now persistent (`AIAgent`, `AIAgentRun`, `AIAgentTask`, `AIAgentActivity`, `AIAgentRecommendation`). A DeepSeek autonomous worker plans bounded authorized actions and executes them through the controlled tool-request/scan gate. Stop/kill actually revoke Celery tasks. The safety/evidence/messages UI panels remain cosmetic mocks.
+  - **Done:** agents, runs, tasks, activities, and recommendations are now persistent (`AIAgent`, `AIAgentRun`, `AIAgentTask`, `AIAgentActivity`, `AIAgentRecommendation`). A Qwen autonomous worker plans bounded authorized actions and executes them through the controlled tool-request/scan gate. Stop/kill actually revoke Celery tasks. The safety/evidence/messages UI panels remain cosmetic mocks.
   - Location: `backend/api/routes/ai_agents.py:72-110, 434-568`, `frontend/mocks/ai-agents.ts`
 - [ ] **MEDIUM** — `generate_report` Celery task is a **pure stub**; retest creation returns success without creating anything.
   - Location: `backend/workers/tasks_reporting.py:13-28`, `backend/api/routes/scans.py:471-481`
@@ -143,3 +190,4 @@
 5. Remove mock-data fallbacks in `ai-agents.ts` (frontend) and the in-memory agent control plane.
 6. Fail fast on default `SECRET_KEY`; rotate/remove hardcoded admin credentials.
 7. Introduce Alembic migrations and object-level authorization.
+8. Repair the failed CVE sync, recover recent records, then add cursor-based pagination and freshness monitoring.

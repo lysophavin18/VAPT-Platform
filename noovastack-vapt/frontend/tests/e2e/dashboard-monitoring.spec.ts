@@ -1,13 +1,13 @@
-import { expect, test } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 
-async function authenticate(page) {
+async function authenticate(page: Page) {
   await page.addInitScript(() => {
     sessionStorage.setItem('noovastack.token', 'test-token');
     sessionStorage.setItem('noovastack.user', JSON.stringify({ id: 'u1', email: 'admin@noovastack.local', username: 'admin', full_name: 'System Administrator', role: 'admin', is_active: true }));
   });
 }
 
-async function stubDashboardApis(page) {
+async function stubDashboardApis(page: Page) {
   await page.route('**/api/auth/me', (route) => route.fulfill({ json: { id: 'u1', email: 'admin@noovastack.local', username: 'admin', full_name: 'System Administrator', role: 'admin', is_active: true } }));
   await page.route('**/api/approvals**', (route) => route.fulfill({ json: [] }));
   await page.route('**/api/projects', (route) => route.fulfill({ json: [{ id: 'p1', name: 'Portal', environment: 'production', status: 'active' }] }));

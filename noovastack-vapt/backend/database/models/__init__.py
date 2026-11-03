@@ -286,6 +286,41 @@ class FindingComment(Base):
     finding = relationship("Finding", back_populates="comments")
 
 
+class PatchRecord(Base):
+    __tablename__ = "patch_records"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    asset_id = Column(UUID(as_uuid=True), ForeignKey("assets.id", ondelete="SET NULL"), index=True)
+    finding_id = Column(UUID(as_uuid=True), ForeignKey("findings.id", ondelete="SET NULL"), index=True)
+    cve_id = Column(String(32), index=True)
+    title = Column(String(500), nullable=False)
+    package_name = Column(String(255))
+    installed_version = Column(String(255))
+    fixed_version = Column(String(255))
+    priority = Column(String(20), default="medium", nullable=False, index=True)
+    status = Column(String(30), default="draft", nullable=False, index=True)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    requested_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    due_at = Column(DateTime)
+    maintenance_start = Column(DateTime)
+    maintenance_end = Column(DateTime)
+    remediation = Column(Text)
+    rollback_plan = Column(Text)
+    deployment_evidence = Column(JSONB, default=dict)
+    verification_notes = Column(Text)
+    deployed_at = Column(DateTime)
+    verified_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    project = relationship("Project")
+    asset = relationship("Asset")
+    finding = relationship("Finding")
+    owner = relationship("User", foreign_keys=[owner_id])
+
+
 class Evidence(Base):
     __tablename__ = "evidence"
 
@@ -502,6 +537,18 @@ class AuditLog(Base):
     details = Column(JSONB, default=dict)
     ip_address = Column(String(45))
     created_at = Column(DateTime, server_default=func.now())
+
+
+class IntegrationSetting(Base):
+    __tablename__ = "integration_settings"
+
+    key = Column(String(50), primary_key=True)
+    enabled = Column(Boolean, default=False, nullable=False)
+    secret_encrypted = Column(Text)
+    config = Column(JSONB, default=dict, nullable=False)
+    updated_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
 
 class CVERecord(Base):

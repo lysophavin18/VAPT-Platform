@@ -1,7 +1,7 @@
 """
 NoovaStack VAPT Platform - Autonomous AI Agent Tasks
 
-The DeepSeek (or any OpenAI-compatible) model acts as an autonomous pentester:
+The configured Qwen (or any OpenAI-compatible) model acts as an autonomous pentester:
 it plans a bounded set of authorized actions, then every action is executed
 through the exact same controlled tool-request gate the HTTP API uses. The model
 never touches the shell, network scanners, or raw tool arguments directly.

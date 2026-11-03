@@ -63,7 +63,7 @@ export default function AutonomousRunsPage() {
     <>
       <PageHeader
         title="Autonomous Pentest Agents"
-        description="DeepSeek-driven agents plan a bounded authorized assessment and execute every action through the controlled scan gate."
+        description="Qwen-driven agents plan a bounded authorized assessment and execute every action through the controlled scan gate."
       />
       <div className="grid gap-6 xl:grid-cols-[380px_1fr]">
         <Card className="p-6">
