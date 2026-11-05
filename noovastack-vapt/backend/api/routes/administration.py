@@ -6,16 +6,16 @@ import smtplib
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, EmailStr, Field
-from sqlalchemy import or_, select
+from sqlalchemy import String, cast, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from database import get_db
 from database.models import User, ScanProfile, AuditLog, IntegrationSetting
 from integrations.telegram import EVENT_CATEGORIES, FINDING_SEVERITIES, activity_message, decrypt_token, encrypt_token, send_message, telegram_request
 from integrations.email import send_email
-from auth import require_admin, User as UserModel
+from auth import require_admin, require_manager, User as UserModel
 from api.schemas import UserResponse, AuditLogResponse
 from scans.tools import SCANNER_TOOL_CATALOG
 
@@ -493,3 +493,82 @@ async def list_audit_logs(
         select(AuditLog).order_by(AuditLog.created_at.desc()).limit(limit)
     )
     return result.scalars().all()
+
+
+@router.get("/audit-logs/search")
+async def search_audit_logs(
+    search: str | None = Query(default=None, max_length=200),
+    event_type: str | None = Query(default=None, max_length=50),
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    sort: str = Query(default="desc", pattern="^(asc|desc)$"),
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=25, ge=10, le=100),
+    db: AsyncSession = Depends(get_db),
+    current_user: UserModel = Depends(require_manager),
+):
+    """Search and paginate platform audit events without loading the full history."""
+    filters = []
+    if search and search.strip():
+        needle = search.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        pattern = f"%{needle}%"
+        filters.append(or_(
+            AuditLog.event_type.ilike(pattern, escape="\\"),
+            AuditLog.action.ilike(pattern, escape="\\"),
+            cast(AuditLog.details, String).ilike(pattern, escape="\\"),
+            UserModel.username.ilike(pattern, escape="\\"),
+            UserModel.email.ilike(pattern, escape="\\"),
+            UserModel.full_name.ilike(pattern, escape="\\"),
+        ))
+    if event_type:
+        filters.append(AuditLog.event_type == event_type)
+    if date_from:
+        filters.append(AuditLog.created_at >= _audit_utc_naive(date_from))
+    if date_to:
+        filters.append(AuditLog.created_at < _audit_utc_naive(date_to))
+
+    base = select(AuditLog, UserModel).outerjoin(UserModel, UserModel.id == AuditLog.actor_id)
+    count_query = select(func.count(AuditLog.id)).select_from(AuditLog).outerjoin(UserModel, UserModel.id == AuditLog.actor_id)
+    if filters:
+        base = base.where(*filters)
+        count_query = count_query.where(*filters)
+
+    total = int((await db.execute(count_query)).scalar_one())
+    order = AuditLog.created_at.asc() if sort == "asc" else AuditLog.created_at.desc()
+    rows = (await db.execute(
+        base.order_by(order, AuditLog.id.desc()).offset((page - 1) * page_size).limit(page_size)
+    )).all()
+    event_types = (await db.execute(
+        select(AuditLog.event_type).distinct().order_by(AuditLog.event_type)
+    )).scalars().all()
+
+    return {
+        "items": [
+            {
+                "id": log.id,
+                "project_id": log.project_id,
+                "engagement_id": log.engagement_id,
+                "scan_id": log.scan_id,
+                "actor_id": log.actor_id,
+                "actor_name": (actor.full_name or actor.username) if actor else "System",
+                "actor_email": actor.email if actor else None,
+                "event_type": log.event_type,
+                "action": log.action,
+                "details": log.details or {},
+                "ip_address": log.ip_address,
+                "created_at": log.created_at,
+            }
+            for log, actor in rows
+        ],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total + page_size - 1) // page_size,
+        "event_types": event_types,
+    }
+
+
+def _audit_utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(timezone.utc).replace(tzinfo=None)

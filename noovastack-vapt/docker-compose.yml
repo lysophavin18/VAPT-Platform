@@ -3,9 +3,9 @@ services:
     image: postgres:16-alpine
     container_name: noovastack-postgres
     environment:
-      POSTGRES_DB: noovastack_vapt
-      POSTGRES_USER: noovastack
-      POSTGRES_PASSWORD: noovastack_secure_2024!
+      POSTGRES_DB: ${POSTGRES_DB:-noovastack_vapt}
+      POSTGRES_USER: ${POSTGRES_USER:-noovastack}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./backend/database/init.sql:/docker-entrypoint-initdb.d/init.sql
@@ -14,7 +14,7 @@ services:
     networks:
       - noovastack-network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U noovastack -d noovastack_vapt"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-noovastack} -d ${POSTGRES_DB:-noovastack_vapt}"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -43,7 +43,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: noovastack-redis
-    command: redis-server --appendonly yes --requirepass noovastack_redis_2024!
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}"]
     volumes:
       - redis_data:/data
     ports:
@@ -51,7 +51,7 @@ services:
     networks:
       - noovastack-network
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "noovastack_redis_2024!", "ping"]
+      test: ["CMD-SHELL", "redis-cli -a '${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}' ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -63,15 +63,15 @@ services:
       dockerfile: Dockerfile
     container_name: noovastack-backend
     environment:
-      - DATABASE_URL=postgresql+asyncpg://noovastack:noovastack_secure_2024!@postgres:5432/noovastack_vapt
-      - REDIS_URL=redis://:noovastack_redis_2024!@redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-noovastack}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-noovastack_vapt}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
       - SECRET_KEY=${SECRET_KEY:?Set SECRET_KEY to a secure random value of at least 32 characters}
       - INITIAL_ADMIN_PASSWORD=${INITIAL_ADMIN_PASSWORD:-}
       - CORS_ORIGINS=${CORS_ORIGINS:-http://localhost:3000}
       - JWT_ALGORITHM=HS256
       - JWT_EXPIRATION=3600
-      - CELERY_BROKER_URL=redis://:noovastack_redis_2024!@redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@redis:6379/2
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/2
       - NVD_API_KEY=${NVD_API_KEY:-}
       - CVE_HTTP_TIMEOUT_SECONDS=${CVE_HTTP_TIMEOUT_SECONDS:-45}
       - CVE_STALE_AFTER_HOURS=${CVE_STALE_AFTER_HOURS:-4}
@@ -106,11 +106,11 @@ services:
     container_name: noovastack-celery-worker
     command: celery -A workers.celery_app worker --loglevel=info --pool=solo --concurrency=1 -Q asset_discovery,scan,reporting,scheduling,ai,monitoring
     environment:
-      - DATABASE_URL=postgresql+asyncpg://noovastack:noovastack_secure_2024!@127.0.0.1:5434/noovastack_vapt
-      - REDIS_URL=redis://:noovastack_redis_2024!@127.0.0.1:6381/0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-noovastack}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@127.0.0.1:5434/${POSTGRES_DB:-noovastack_vapt}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@127.0.0.1:6381/0
       - PYTHONPATH=/app
-      - CELERY_BROKER_URL=redis://:noovastack_redis_2024!@127.0.0.1:6381/1
-      - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@127.0.0.1:6381/2
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@127.0.0.1:6381/1
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@127.0.0.1:6381/2
       - NVD_API_KEY=${NVD_API_KEY:-}
       - CVE_HTTP_TIMEOUT_SECONDS=${CVE_HTTP_TIMEOUT_SECONDS:-45}
       - CVE_STALE_AFTER_HOURS=${CVE_STALE_AFTER_HOURS:-4}
@@ -143,11 +143,11 @@ services:
     container_name: noovastack-celery-beat
     command: celery -A workers.celery_app beat --loglevel=info
     environment:
-      - DATABASE_URL=postgresql+asyncpg://noovastack:noovastack_secure_2024!@postgres:5432/noovastack_vapt
-      - REDIS_URL=redis://:noovastack_redis_2024!@redis:6379/0
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-noovastack}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-noovastack_vapt}
+      - REDIS_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/0
       - PYTHONPATH=/app
-      - CELERY_BROKER_URL=redis://:noovastack_redis_2024!@redis:6379/1
-      - CELERY_RESULT_BACKEND=redis://:noovastack_redis_2024!@redis:6379/2
+      - CELERY_BROKER_URL=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://:${REDIS_PASSWORD:?Set REDIS_PASSWORD in .env}@redis:6379/2
       - NVD_API_KEY=${NVD_API_KEY:-}
       - CVE_HTTP_TIMEOUT_SECONDS=${CVE_HTTP_TIMEOUT_SECONDS:-45}
       - CVE_STALE_AFTER_HOURS=${CVE_STALE_AFTER_HOURS:-4}

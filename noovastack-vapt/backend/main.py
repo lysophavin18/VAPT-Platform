@@ -16,7 +16,7 @@ from api.routes import api_tokens
 from api.routes import (
     auth, projects, engagements, assets, asset_groups, scans,
     scan_schedules, findings, reports, dashboard, administration, ai_agents, cve, approvals,
-    domain_monitors, patches,
+    domain_monitors, patches, mitigations,
 )
 from scans.profiles import DEFAULT_SCAN_PROFILES
 
@@ -184,6 +184,7 @@ app.include_router(approvals.router, prefix="/api/approvals", tags=["Approvals"]
 app.include_router(domain_monitors.router, prefix="/api", tags=["Domain Monitoring"])
 app.include_router(api_tokens.router, prefix="/api", tags=["API Tokens"])
 app.include_router(patches.router, prefix="/api/patches", tags=["Patch Management"])
+app.include_router(mitigations.router, prefix="/api/mitigations", tags=["Mitigation Management"])
 
 
 async def _require_admin_from_request(request: Request):

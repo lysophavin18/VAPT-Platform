@@ -1,0 +1,78 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useQuery } from '@tanstack/react-query';
+import { ArrowLeft, Plus, ShieldCheck, Trash2 } from 'lucide-react';
+import Link from 'next/link';
+import { toast } from 'sonner';
+import { PageHeader } from '@/components/layout/page-header';
+import { Card, CardContent, CardHeader } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Field, Input, Select, Textarea } from '@/components/ui/input';
+import { useAuth } from '@/hooks/use-auth';
+import { useProjects } from '@/hooks/use-projects';
+import { useMitigationActions } from '@/hooks/use-mitigations';
+import { api } from '@/lib/api-client';
+
+const strategies = [
+  ['configuration_hardening','Security Configuration Hardening','Disable unnecessary services and enforce secure settings.'],
+  ['network_restriction','Network Restriction','Firewall rules, allowlisting, segmentation, or reduced exposure.'],
+  ['access_control','Access Control','MFA, privilege reduction, authorization corrections, or account restriction.'],
+  ['application_mitigation','Application-Level Mitigation','Input validation, parameterization, authorization, sessions, or rate limits.'],
+  ['web_application_firewall','Web Application Firewall','Temporary WAF rules, filtering, or virtual patching.'],
+  ['service_mitigation','Service Mitigation','Disable features, isolate services, or reduce attack surface.'],
+  ['compensating_controls','Compensating Controls','Layered restrictions, detection, and controlled administrative access.'],
+  ['custom','Custom Mitigation','Define an authorized control not covered above.'],
+] as const;
+type TaskDraft = { title: string; description: string; due_at: string };
+const blankTask = (): TaskDraft => ({ title: '', description: '', due_at: '' });
+
+export default function NewMitigationPage() {
+  const router = useRouter(); const params = useSearchParams(); const { token, user } = useAuth(); const projects = useProjects(); const actions = useMitigationActions();
+  const [projectId, setProjectId] = useState(params.get('project_id') ?? ''); const [findingId, setFindingId] = useState(params.get('finding_id') ?? '');
+  const findings = useQuery({ queryKey: ['mitigation-findings', projectId], queryFn: () => api.findings(token, `?project_id=${projectId}`), enabled: Boolean(token && projectId) });
+  const assets = useQuery({ queryKey: ['mitigation-assets', projectId], queryFn: () => api.assets(projectId, token), enabled: Boolean(token && projectId) });
+  const patches = useQuery({ queryKey: ['mitigation-patches'], queryFn: () => api.patches(token), enabled: Boolean(token) });
+  const finding = findings.data?.find(x => x.id === findingId);
+  const [assetIds, setAssetIds] = useState<string[]>([]); const [patchIds, setPatchIds] = useState<string[]>([]); const [tasks, setTasks] = useState<TaskDraft[]>([blankTask()]);
+  const [form, setForm] = useState({ title:'', description:'', mitigation_type:'temporary', strategy:'network_restriction', custom_strategy:'', proposed_mitigation:'', expected_outcome:'', root_cause:'', business_criticality:'high', exposure_level:'internet', limitations:'', verification_criteria:'', rollback_plan:'', dependencies:'', related_change_request:'', potential_service_impact:'', supporting_team:'', start_date:'', target_completion_date:'', temporary_expires_at:'', permanent_remediation_required:true, permanent_remediation_due_at:'', expected_residual_risk:'medium', exploitability:'high', asset_criticality:'high' });
+  useEffect(() => { if (!finding) return; setForm(x => ({ ...x, title: x.title || `Mitigate: ${finding.title}`, description: x.description || finding.description || '', proposed_mitigation: x.proposed_mitigation || finding.remediation || finding.ai_remediation || '', root_cause: x.root_cause || finding.ai_explanation || '', expected_outcome: x.expected_outcome || `Reduce exploitability and exposure associated with ${finding.title}.` })); if (finding.asset_id) setAssetIds([finding.asset_id]); }, [finding]);
+  const selectedStrategy = useMemo(() => strategies.find(x => x[0] === form.strategy), [form.strategy]);
+  const set = (key: string, value: string | boolean) => setForm(x => ({ ...x, [key]: value }));
+  async function submit() {
+    if (!projectId || !findingId || !form.title.trim() || !form.proposed_mitigation.trim() || !form.verification_criteria.trim()) return toast.error('Project, finding, plan, and verification criteria are required');
+    if (form.mitigation_type === 'temporary' && !form.temporary_expires_at) return toast.error('Temporary controls require an expiration date');
+    const validTasks = tasks.filter(x => x.title.trim());
+    try {
+      const plan = await actions.create.mutateAsync({ project_id: projectId, finding_id: findingId, asset_ids: assetIds, patch_ids: patchIds, ...form, owner_id: user?.id, implementation_steps: validTasks.map(x => x.title), tasks: validTasks.map(x => ({ ...x, due_at: x.due_at || null, assignee_id: user?.id })), controls: [{ control_type: form.strategy, description: form.proposed_mitigation, implementation_requirements: validTasks.map(x => x.title).join('; '), expected_effectiveness: form.expected_residual_risk === 'low' ? 'high' : 'medium', limitations: form.limitations, verification_method: form.verification_criteria, expires_at: form.mitigation_type === 'temporary' ? form.temporary_expires_at : null }], risk: { initial_business_risk: finding?.severity || 'medium', exploitability: form.exploitability, asset_criticality: form.asset_criticality, internet_exposure: form.exposure_level, expected_residual_risk: form.expected_residual_risk }, target_completion_date: form.target_completion_date || null, start_date: form.start_date || null, temporary_expires_at: form.mitigation_type === 'temporary' ? form.temporary_expires_at : null, permanent_remediation_due_at: form.permanent_remediation_due_at || null });
+      toast.success('Mitigation plan created'); router.push(`/mitigations/${plan.id}`);
+    } catch (error) { toast.error(error instanceof Error ? error.message : 'Unable to create mitigation plan'); }
+  }
+  return <>
+    <PageHeader title="Create Mitigation Plan" description="Create a controlled, auditable security mitigation from an existing finding." actions={<Link href="/mitigations"><Button variant="outline"><ArrowLeft className="h-4 w-4" /> Back to Queue</Button></Link>} />
+    <div className="mx-auto max-w-6xl space-y-5">
+      <Section title="A. Finding Information" subtitle="Link to the existing vulnerability record; no duplicate finding is created.">
+        <div className="grid gap-4 md:grid-cols-2"><Field label="Project"><Select value={projectId} onChange={e => { setProjectId(e.target.value); setFindingId(''); setAssetIds([]); }}><option value="">Select project</option>{(projects.data ?? []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}</Select></Field><Field label="Existing Finding"><Select value={findingId} onChange={e => setFindingId(e.target.value)} disabled={!projectId}><option value="">Select finding</option>{(findings.data ?? []).map(x => <option key={x.id} value={x.id}>{x.severity.toUpperCase()} · {x.title}</option>)}</Select></Field></div>
+        {finding ? <div className="mt-4 grid gap-3 rounded-xl bg-slate-50 p-4 text-sm md:grid-cols-4 dark:bg-[#172334]"><Info label="Severity" value={finding.severity} /><Info label="CWE" value={finding.cwe_id || 'Not recorded'} /><Info label="CVSS" value={finding.cvss_score?.toString() || 'Not scored'} /><Info label="Status" value={finding.status} /></div> : null}
+        <div className="mt-4"><p className="mb-2 text-sm font-medium">Affected assets</p><div className="flex flex-wrap gap-2">{(assets.data ?? []).map(x => <label key={x.id} className="rounded-lg border px-3 py-2 text-sm"><input className="mr-2" type="checkbox" checked={assetIds.includes(x.id)} onChange={e => setAssetIds(v => e.target.checked ? [...v, x.id] : v.filter(id => id !== x.id))} />{x.name || x.value}</label>)}</div></div>
+      </Section>
+      <Section title="B. Mitigation Strategy" subtitle="Monitoring supports a control but is not treated as vulnerability removal.">
+        <div className="grid gap-4 md:grid-cols-2"><Field label="Mitigation type"><Select value={form.mitigation_type} onChange={e => set('mitigation_type', e.target.value)}><option value="temporary">Temporary</option><option value="permanent">Permanent</option><option value="compensating">Compensating</option></Select></Field><Field label="Strategy"><Select value={form.strategy} onChange={e => set('strategy', e.target.value)}>{strategies.map(x => <option key={x[0]} value={x[0]}>{x[1]}</option>)}</Select></Field></div>
+        <div className="mt-3 rounded-xl border border-blue-100 bg-blue-50 p-4 text-sm text-blue-900 dark:border-blue-900 dark:bg-blue-950/30 dark:text-blue-100"><p className="font-semibold">{selectedStrategy?.[1]}</p><p className="mt-1">{selectedStrategy?.[2]}</p></div>
+        {form.strategy === 'custom' ? <div className="mt-4"><Field label="Custom strategy"><Input value={form.custom_strategy} onChange={e => set('custom_strategy', e.target.value)} /></Field></div> : null}
+      </Section>
+      <Section title="C. Implementation Plan" subtitle="Define ownership, work, dependencies, evidence expectations, and safe rollback.">
+        <div className="grid gap-4 md:grid-cols-2"><Field label="Plan title"><Input value={form.title} onChange={e => set('title', e.target.value)} /></Field><Field label="Supporting team"><Input value={form.supporting_team} onChange={e => set('supporting_team', e.target.value)} placeholder="Network Engineering" /></Field><div className="md:col-span-2"><Field label="Description"><Textarea rows={3} value={form.description} onChange={e => set('description', e.target.value)} /></Field></div><div className="md:col-span-2"><Field label="Proposed mitigation"><Textarea rows={4} value={form.proposed_mitigation} onChange={e => set('proposed_mitigation', e.target.value)} /></Field></div><Field label="Expected security outcome"><Textarea value={form.expected_outcome} onChange={e => set('expected_outcome', e.target.value)} /></Field><Field label="Limitations"><Textarea value={form.limitations} onChange={e => set('limitations', e.target.value)} /></Field><Field label="Dependencies"><Textarea value={form.dependencies} onChange={e => set('dependencies', e.target.value)} /></Field><Field label="Service impact"><Textarea value={form.potential_service_impact} onChange={e => set('potential_service_impact', e.target.value)} /></Field><Field label="Change request"><Input value={form.related_change_request} onChange={e => set('related_change_request', e.target.value)} /></Field><Field label="Start date"><Input type="datetime-local" value={form.start_date} onChange={e => set('start_date', e.target.value)} /></Field><Field label="Target completion"><Input type="datetime-local" value={form.target_completion_date} onChange={e => set('target_completion_date', e.target.value)} /></Field><div className="md:col-span-2"><Field label="Rollback / recovery plan"><Textarea value={form.rollback_plan} onChange={e => set('rollback_plan', e.target.value)} /></Field></div><div className="md:col-span-2"><Field label="Verification criteria"><Textarea rows={3} value={form.verification_criteria} onChange={e => set('verification_criteria', e.target.value)} /></Field></div></div>
+        <div className="mt-5"><div className="mb-3 flex items-center justify-between"><h3 className="font-semibold">Implementation tasks</h3><Button variant="outline" onClick={() => setTasks(x => [...x, blankTask()])}><Plus className="h-4 w-4" /> Add task</Button></div>{tasks.map((task, index) => <div key={index} className="mb-3 grid gap-3 rounded-xl border p-3 md:grid-cols-[1fr_1.5fr_220px_auto]"><Input value={task.title} onChange={e => setTasks(x => x.map((t,i) => i === index ? {...t,title:e.target.value}:t))} placeholder="Task title" /><Input value={task.description} onChange={e => setTasks(x => x.map((t,i) => i === index ? {...t,description:e.target.value}:t))} placeholder="Task description" /><Input type="datetime-local" value={task.due_at} onChange={e => setTasks(x => x.map((t,i) => i === index ? {...t,due_at:e.target.value}:t))} /><Button variant="ghost" onClick={() => setTasks(x => x.filter((_,i) => i !== index))}><Trash2 className="h-4 w-4" /></Button></div>)}</div>
+      </Section>
+      <Section title="D. Risk Assessment" subtitle="Residual risk is tracked separately; CVSS on the underlying finding is never rewritten.">
+        <div className="grid gap-4 md:grid-cols-3"><Field label="Exploitability"><Select value={form.exploitability} onChange={e => set('exploitability', e.target.value)}>{['critical','high','medium','low'].map(x => <option key={x}>{x}</option>)}</Select></Field><Field label="Asset criticality"><Select value={form.asset_criticality} onChange={e => set('asset_criticality', e.target.value)}>{['critical','high','medium','low'].map(x => <option key={x}>{x}</option>)}</Select></Field><Field label="Expected residual risk"><Select value={form.expected_residual_risk} onChange={e => set('expected_residual_risk', e.target.value)}>{['critical','high','medium','low'].map(x => <option key={x}>{x}</option>)}</Select></Field><Field label="Exposure"><Select value={form.exposure_level} onChange={e => set('exposure_level', e.target.value)}><option value="internet">Internet exposed</option><option value="internal">Internal</option><option value="restricted">Restricted</option><option value="isolated">Isolated</option></Select></Field>{form.mitigation_type === 'temporary' ? <Field label="Temporary control expiration"><Input type="datetime-local" value={form.temporary_expires_at} onChange={e => set('temporary_expires_at', e.target.value)} /></Field> : null}<Field label="Permanent remediation due"><Input type="datetime-local" value={form.permanent_remediation_due_at} onChange={e => set('permanent_remediation_due_at', e.target.value)} /></Field></div>
+      </Section>
+      <Section title="E. Patch Management Link" subtitle="Temporary controls remain explicit even when a permanent patch is scheduled."><div className="flex flex-wrap gap-2">{(patches.data ?? []).filter(x => x.project_id === projectId && (!findingId || x.finding_id === findingId)).map(x => <label key={x.id} className="rounded-lg border px-3 py-2 text-sm"><input className="mr-2" type="checkbox" checked={patchIds.includes(x.id)} onChange={e => setPatchIds(v => e.target.checked ? [...v,x.id] : v.filter(id => id !== x.id))} />{x.title}</label>)}{!patches.data?.some(x => x.project_id === projectId && x.finding_id === findingId) ? <p className="text-sm text-slate-500">No linked patch plan. The mitigation can proceed independently.</p> : null}</div></Section>
+      <div className="flex justify-end gap-3 pb-10"><Link href="/mitigations"><Button variant="outline">Cancel</Button></Link><Button onClick={submit} disabled={actions.create.isPending}><ShieldCheck className="h-4 w-4" /> {actions.create.isPending ? 'Creating…' : 'Create Mitigation Plan'}</Button></div>
+    </div>
+  </>;
+}
+function Section({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) { return <Card><CardHeader><h2 className="font-semibold">{title}</h2><p className="mt-1 text-sm text-slate-500">{subtitle}</p></CardHeader><CardContent>{children}</CardContent></Card>; }
+function Info({ label, value }: { label: string; value: string }) { return <div><p className="text-xs text-slate-500">{label}</p><p className="mt-1 font-medium capitalize">{value}</p></div>; }

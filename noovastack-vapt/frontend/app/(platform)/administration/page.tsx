@@ -39,6 +39,7 @@ const telegramCategories = [
   ['scans', 'Scans & schedules'],
   ['findings', 'Findings & retests'],
   ['patches', 'Patch management'],
+  ['mitigations', 'Mitigation management'],
   ['approvals', 'Approval decisions'],
   ['reports', 'Report activity'],
   ['assets', 'Assets & discovery'],

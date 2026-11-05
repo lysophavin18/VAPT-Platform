@@ -1,4 +1,4 @@
-import type { Approval, Asset, AssetGraph, AssetGroup, DashboardMetricsResponse, DashboardPanelsResponse, DashboardTimeseriesResponse, DiscoveryJobStatus, DomainMonitor, DomainMonitorEvent, Engagement, Finding, FindingComment, PatchRecord, Project, ReportAIImprovements, Scan, ScanEvent, ScanEvidencePayload, ScanModule, ScanProcessPayload, ScanProgressPayload, ScanProfile, ScanResultsPayload, ScanSafetyState, ScanSchedule, ScanValidationResult, User, VulnerabilityAssessmentReport } from '@/types';
+import type { Approval, Asset, AssetGraph, AssetGroup, DashboardMetricsResponse, DashboardPanelsResponse, DashboardTimeseriesResponse, DiscoveryJobStatus, DomainMonitor, DomainMonitorEvent, Engagement, Finding, FindingComment, MitigationList, MitigationMetrics, MitigationPlan, PatchRecord, Project, ReportAIImprovements, Scan, ScanEvent, ScanEvidencePayload, ScanModule, ScanProcessPayload, ScanProgressPayload, ScanProfile, ScanResultsPayload, ScanSafetyState, ScanSchedule, ScanValidationResult, User, VulnerabilityAssessmentReport } from '@/types';
 
 export interface APITokenResponse {
   id: string;
@@ -88,6 +88,40 @@ export type ScannerToolsHealth = {
   available: number;
   missing: number;
   tools: ScannerToolHealth[];
+};
+
+export type AuditLogRow = {
+  id: string;
+  project_id?: string | null;
+  engagement_id?: string | null;
+  scan_id?: string | null;
+  actor_id?: string | null;
+  actor_name: string;
+  actor_email?: string | null;
+  event_type: string;
+  action: string;
+  details: Record<string, unknown>;
+  ip_address?: string | null;
+  created_at?: string | null;
+};
+
+export type AuditLogSearchResponse = {
+  items: AuditLogRow[];
+  total: number;
+  page: number;
+  page_size: number;
+  total_pages: number;
+  event_types: string[];
+};
+
+export type AuditLogQuery = {
+  search?: string;
+  event_type?: string;
+  date_from?: string;
+  date_to?: string;
+  sort?: 'asc' | 'desc';
+  page?: number;
+  page_size?: number;
 };
 
 export type CVESyncStatus = {
@@ -292,6 +326,18 @@ export const api = {
   transitionPatch: (id: string, status: string, payload: Record<string, unknown>, token?: string | null) => request<PatchRecord>(`/patches/${id}/transition`, { method: 'POST', body: JSON.stringify({ status, ...payload }), token }),
   createPatchFromFinding: (findingId: string, token?: string | null) => request<PatchRecord>(`/patches/from-finding/${findingId}`, { method: 'POST', token }),
   syncPatchFindings: (token?: string | null) => request<{ created: number; skipped_existing: number; patch_ids: string[] }>('/patches/sync-findings', { method: 'POST', token }),
+  mitigations: (query = '', token?: string | null) => request<MitigationList>(`/mitigations${query}`, { token }),
+  mitigationMetrics: (token?: string | null) => request<MitigationMetrics>('/mitigations/metrics', { token }),
+  mitigation: (id: string, token?: string | null) => request<MitigationPlan>(`/mitigations/${id}`, { token }),
+  createMitigation: (payload: Record<string, unknown>, token?: string | null) => request<MitigationPlan>('/mitigations', { method: 'POST', body: JSON.stringify(payload), token }),
+  updateMitigation: (id: string, payload: Record<string, unknown>, token?: string | null) => request<MitigationPlan>(`/mitigations/${id}`, { method: 'PATCH', body: JSON.stringify(payload), token }),
+  transitionMitigation: (id: string, status: string, reason = '', token?: string | null) => request<MitigationPlan>(`/mitigations/${id}/transition`, { method: 'POST', body: JSON.stringify({ status, reason }), token }),
+  decideMitigationApproval: (id: string, approvalId: string, decision: string, comments: string, token?: string | null) => request<MitigationPlan>(`/mitigations/${id}/approvals/${approvalId}`, { method: 'POST', body: JSON.stringify({ decision, comments }), token }),
+  updateMitigationTask: (id: string, taskId: string, payload: Record<string, unknown>, token?: string | null) => request<MitigationPlan>(`/mitigations/${id}/tasks/${taskId}`, { method: 'PATCH', body: JSON.stringify(payload), token }),
+  addMitigationEvidence: (id: string, payload: Record<string, unknown>, token?: string | null) => request<MitigationPlan>(`/mitigations/${id}/evidence`, { method: 'POST', body: JSON.stringify(payload), token }),
+  verifyMitigation: (id: string, payload: Record<string, unknown>, token?: string | null) => request<MitigationPlan>(`/mitigations/${id}/verification`, { method: 'POST', body: JSON.stringify(payload), token }),
+  acceptMitigationRisk: (id: string, payload: Record<string, unknown>, token?: string | null) => request<MitigationPlan>(`/mitigations/${id}/risk-acceptance`, { method: 'POST', body: JSON.stringify(payload), token }),
+  exportMitigations: (token?: string | null) => download('/mitigations/export.csv', token),
   schedules: (token?: string | null) => request<ScanSchedule[]>('/scan-schedules', { token }),
   createSchedule: (payload: Record<string, unknown>, token?: string | null) => request<ScanSchedule>('/scan-schedules', { method: 'POST', body: JSON.stringify(payload), token }),
   requestScheduleApproval: (id: string, reason: string, token?: string | null) => request<{ status: string; approval_id: string }>(`/scan-schedules/${id}/request-approval`, { method: 'POST', body: JSON.stringify({ reason }), token }),
@@ -338,7 +384,16 @@ export const api = {
       signal,
     });
     if (!res.ok) {
+      const contentType = res.headers.get('content-type')?.toLowerCase() ?? '';
       const text = await res.text().catch(() => '');
+      if (contentType.includes('text/html') || /^\s*<!doctype html/i.test(text)) {
+        throw new ApiError(
+          res.status,
+          res.status === 502 || res.status === 504
+            ? 'The AI gateway timed out before the model responded. Please retry your message.'
+            : `The AI gateway returned an unexpected response (HTTP ${res.status}).`,
+        );
+      }
       let detail = text;
       try {
         const body = JSON.parse(text) as { detail?: unknown };
@@ -380,6 +435,13 @@ export const api = {
   cveSyncJob: (jobId: string, token?: string | null) => request<CVESyncJob>(`/cve/jobs/${jobId}`, { token }),
   syncSingleCve: (cveId: string, token?: string | null) => request<{ status: 'queued'; job_id: string; source: string; cve_id: string }>(`/cve/sync/${encodeURIComponent(cveId)}`, { method: 'POST', token }),
   auditLogs: (token?: string | null) => request<unknown[]>('/admin/audit-logs', { token }),
+  searchAuditLogs: (query: AuditLogQuery, token?: string | null) => {
+    const params = new URLSearchParams();
+    Object.entries(query).forEach(([key, value]) => {
+      if (value !== undefined && value !== '') params.set(key, String(value));
+    });
+    return request<AuditLogSearchResponse>(`/admin/audit-logs/search?${params.toString()}`, { token });
+  },
   generateReport: (payload: Record<string, unknown>, token?: string | null) => request<Record<string, unknown>>('/reports/generate', { method: 'POST', body: JSON.stringify(payload), token }),
   scanReportData: (scanId: string, token?: string | null) => request<VulnerabilityAssessmentReport>(`/reports/scan/${scanId}/data`, { token }),
   reportAIImprovements: (scanId: string, token?: string | null) => request<ReportAIImprovements>(`/reports/scan/${scanId}/ai-improvements`, { token }),

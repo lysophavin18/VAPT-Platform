@@ -44,6 +44,7 @@ const TELEGRAM_CATEGORIES = [
   ['scans', 'Scans & schedules'],
   ['findings', 'Findings & retests'],
   ['patches', 'Patch management'],
+  ['mitigations', 'Mitigation management'],
   ['approvals', 'Approvals'],
   ['reports', 'Reports'],
   ['assets', 'Assets & discovery'],

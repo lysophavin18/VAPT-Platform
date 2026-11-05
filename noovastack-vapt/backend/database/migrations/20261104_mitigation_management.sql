@@ -1,0 +1,7 @@
+-- NoovaStack Mitigation Management schema migration.
+-- The application currently uses SQLAlchemy metadata.create_all at startup.
+-- This marker documents the additive release; all tables, foreign keys and
+-- indexes are declared in database/models/__init__.py and created without
+-- dropping or rewriting existing findings or patch records.
+-- Rollback: drop mitigation_* tables in reverse foreign-key order only after
+-- an approved backup and retention review.

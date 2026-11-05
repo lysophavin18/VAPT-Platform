@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { PackageCheck } from 'lucide-react';
+import { PackageCheck, ShieldEllipsis } from 'lucide-react';
 import { toast } from 'sonner';
 import { useParams } from 'next/navigation';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -139,7 +139,9 @@ export default function FindingDetailPage() {
   const { token } = useAuth();
   const queryClient = useQueryClient();
   const patches = useQuery({ queryKey: ['patches'], queryFn: () => api.patches(token), enabled: Boolean(token) });
+  const scans = useQuery({ queryKey: ['scans'], queryFn: () => api.scans(token), enabled: Boolean(token) });
   const linkedPatch = (patches.data ?? []).find((patch: PatchRecord) => patch.finding_id === params.findingId);
+  const projectId = (scans.data ?? []).find((scan) => scan.id === item?.scan_id)?.project_id;
   const createPatch = useMutation({
     mutationFn: () => api.createPatchFromFinding(params.findingId, token),
     onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ['patches'] }); await finding.refetch(); toast.success('Patch plan created and linked to this finding'); },
@@ -152,7 +154,7 @@ export default function FindingDetailPage() {
         title={item?.title ?? 'Finding Details'}
         description="Plain-language explanation, evidence, impact, remediation guidance, technical details, AI draft, review history, and retest."
         breadcrumbs={[{ href: '/findings', label: 'Findings' }, { label: item?.title ?? params.findingId }]}
-        actions={linkedPatch ? <Link href="/patches"><button className="inline-flex items-center gap-2 rounded-lg bg-[#155EEF] px-4 py-2 text-sm font-medium text-white"><PackageCheck className="h-4 w-4" /> Open Patch Plan</button></Link> : <button onClick={() => createPatch.mutate()} disabled={createPatch.isPending || !item} className="inline-flex items-center gap-2 rounded-lg bg-[#155EEF] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"><PackageCheck className="h-4 w-4" /> {createPatch.isPending ? 'Creating...' : 'Create Patch Plan'}</button>}
+        actions={<>{projectId ? <Link href={`/mitigations/new?project_id=${projectId}&finding_id=${params.findingId}`}><button className="inline-flex items-center gap-2 rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium"><ShieldEllipsis className="h-4 w-4" /> Create Mitigation</button></Link> : null}{linkedPatch ? <Link href="/patches"><button className="inline-flex items-center gap-2 rounded-lg bg-[#155EEF] px-4 py-2 text-sm font-medium text-white"><PackageCheck className="h-4 w-4" /> Open Patch Plan</button></Link> : <button onClick={() => createPatch.mutate()} disabled={createPatch.isPending || !item} className="inline-flex items-center gap-2 rounded-lg bg-[#155EEF] px-4 py-2 text-sm font-medium text-white disabled:opacity-50"><PackageCheck className="h-4 w-4" /> {createPatch.isPending ? 'Creating...' : 'Create Patch Plan'}</button>}</>}
       />
       <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
         <div className="space-y-6">

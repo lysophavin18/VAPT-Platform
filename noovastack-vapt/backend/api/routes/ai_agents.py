@@ -8,6 +8,7 @@ rewriting the frontend.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import re
@@ -380,11 +381,35 @@ async def local_chat(request: LocalAIRequest, db: AsyncSession = Depends(get_db)
     }
 
     async def stream_tokens():
+        # Flush response headers immediately and keep the connection active while
+        # a large model is still preparing its first token. Cloudflare closes an
+        # otherwise idle origin response before the provider timeout is reached.
+        yield ": connected\n\n"
+        last_client_event = asyncio.get_running_loop().time()
         try:
             async with httpx.AsyncClient(timeout=float(settings.AI_TIMEOUT_SECONDS), trust_env=False) as client:
                 async with client.stream("POST", f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions", headers=ai_headers(), json=payload) as response:
                     response.raise_for_status()
-                    async for line in response.aiter_lines():
+                    lines = response.aiter_lines().__aiter__()
+                    pending_line: asyncio.Task[str] | None = None
+                    while True:
+                        if pending_line is None:
+                            pending_line = asyncio.create_task(lines.__anext__())
+                        completed, _ = await asyncio.wait({pending_line}, timeout=15)
+                        if not completed:
+                            yield ": keep-alive\n\n"
+                            last_client_event = asyncio.get_running_loop().time()
+                            continue
+                        try:
+                            line = pending_line.result()
+                        except StopAsyncIteration:
+                            break
+                        finally:
+                            pending_line = None
+                        now = asyncio.get_running_loop().time()
+                        if now - last_client_event >= 15:
+                            yield ": keep-alive\n\n"
+                            last_client_event = now
                         if not line.startswith("data: "):
                             continue
                         data = line[6:]
@@ -403,11 +428,19 @@ async def local_chat(request: LocalAIRequest, db: AsyncSession = Depends(get_db)
                         token = delta.get("content")
                         if token:
                             yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+                            last_client_event = asyncio.get_running_loop().time()
         except httpx.HTTPError as exc:
             yield f"data: {json.dumps({'type': 'error', 'error': f'Local AI endpoint failed: {exc}'})}\n\n"
         yield f"data: {json.dumps({'type': 'done', 'conversation_id': request.conversation_id or f'chat-{uuid4().hex[:8]}', 'message_id': f'msg-{uuid4().hex[:8]}', 'mode': mode_key, 'model': {'provider': AI_PROVIDER_NAME, 'name': model}, 'created_at': datetime.utcnow().isoformat()})}\n\n"
 
-    return StreamingResponse(stream_tokens(), media_type="text/event-stream")
+    return StreamingResponse(
+        stream_tokens(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 async def execute_agent_tool_request(db: AsyncSession, data: AgentToolRequest, current_user: User) -> dict:

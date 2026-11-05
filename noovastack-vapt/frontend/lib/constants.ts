@@ -1,4 +1,4 @@
-import { Archive, Bell, Bot, Calculator, CalendarClock, CheckCircle2, ClipboardCheck, Container, FileCode2, FileText, FolderKanban, Gauge, Globe2, Network, PackageCheck, Radar, Search, Settings, ShieldAlert, ShieldCheck, Users } from 'lucide-react';
+import { Archive, Bell, Bot, Calculator, CalendarClock, CheckCircle2, ClipboardCheck, Container, FileCode2, FileText, FolderKanban, Gauge, Globe2, Network, PackageCheck, Radar, Search, Settings, ShieldAlert, ShieldCheck, ShieldEllipsis, Users } from 'lucide-react';
 import { BRAND } from '@/lib/branding';
 
 export const APP_NAME = BRAND.productName;
@@ -24,6 +24,7 @@ export const navItems = [
   { href: '/reports', label: 'Reports', icon: FileText, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
   { href: '/retests', label: 'Retests', icon: CheckCircle2, roles: ['admin', 'manager', 'security_team', 'analyst'] },
   { href: '/patches', label: 'Patch Management', icon: PackageCheck, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
+  { href: '/mitigations', label: 'Mitigation Management', icon: ShieldEllipsis, roles: ['admin', 'manager', 'security_team', 'analyst', 'viewer'] },
   { href: '/audit-logs', label: 'Audit Logs', icon: Archive, roles: ['admin', 'manager', 'security_team'] },
   { href: '/administration', label: 'System Administrator', icon: Settings, roles: ['admin'] },
 ] as const;

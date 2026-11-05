@@ -25,6 +25,7 @@ app = Celery(
         "workers.tasks_cve",
         "workers.tasks_telegram",
         "workers.tasks_email",
+        "workers.tasks_mitigations",
     ],
 )
 
@@ -59,6 +60,7 @@ app.conf.update(
         "workers.tasks_cve.*": {"queue": "reporting"},
         "workers.tasks_telegram.*": {"queue": "reporting"},
         "workers.tasks_email.*": {"queue": "reporting"},
+        "workers.tasks_mitigations.*": {"queue": "monitoring"},
     },
     beat_schedule={
         "check-scheduled-scans": {
@@ -89,6 +91,10 @@ app.conf.update(
         "email-activity-notifications": {
             "task": "workers.tasks_email.deliver_activity_notifications",
             "schedule": 60.0,
+        },
+        "monitor-mitigation-deadlines": {
+            "task": "workers.tasks_mitigations.monitor_mitigation_deadlines",
+            "schedule": 3600.0,
         },
     },
 )

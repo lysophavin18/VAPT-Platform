@@ -9,7 +9,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from config import settings
 
 TELEGRAM_API = "https://api.telegram.org"
-EVENT_CATEGORIES = ("projects", "scans", "findings", "patches", "approvals", "reports", "assets", "system")
+EVENT_CATEGORIES = ("projects", "scans", "findings", "patches", "mitigations", "approvals", "reports", "assets", "system")
 FINDING_SEVERITIES = ("critical", "high", "medium", "low", "informational")
 
 
@@ -46,6 +46,8 @@ def event_category(event_type: str, action: str) -> str:
         return "findings"
     if "patch" in text:
         return "patches"
+    if "mitigation" in text:
+        return "mitigations"
     if "report" in text:
         return "reports"
     if "asset" in text or "discovery" in text or "domain" in text:
@@ -72,11 +74,11 @@ def should_deliver_event(
 def activity_message(event_type: str, action: str, details: dict | None, created_at: datetime | None) -> str:
     details = details or {}
     category = event_category(event_type, action)
-    icons = {"projects": "🗂️", "scans": "🔎", "findings": "🛡️", "patches": "🩹", "approvals": "✅", "reports": "📄", "assets": "🌐", "system": "⚙️"}
+    icons = {"projects": "🗂️", "scans": "🔎", "findings": "🛡️", "patches": "🩹", "mitigations": "🧯", "approvals": "✅", "reports": "📄", "assets": "🌐", "system": "⚙️"}
     title = action.replace("_", " ").strip().title() or "Platform activity"
     timestamp = (created_at or datetime.now(timezone.utc)).astimezone(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     safe_lines = []
-    for key in ("project_name", "scan_name", "title", "severity", "cvss_score", "asset", "status", "previous_status", "new_status", "priority", "risk_level", "environment", "actor_email", "result", "reason", "cve_id", "records_synced"):
+    for key in ("mitigation_id", "project_name", "scan_name", "title", "severity", "cvss_score", "asset", "status", "previous_status", "new_status", "priority", "risk_level", "environment", "actor_email", "result", "reason", "cve_id", "records_synced"):
         value = details.get(key)
         if value not in (None, "", [], {}):
             safe_lines.append(f"<b>{html.escape(key.replace('_', ' ').title())}:</b> {html.escape(str(value))}")

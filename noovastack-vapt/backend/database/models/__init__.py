@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    Column, String, Boolean, Integer, Text, DateTime, ForeignKey, Float, JSON
+    Column, String, Boolean, Integer, Text, DateTime, ForeignKey, Float, Index, JSON
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
 from sqlalchemy.orm import relationship
@@ -321,6 +321,205 @@ class PatchRecord(Base):
     owner = relationship("User", foreign_keys=[owner_id])
 
 
+class MitigationPlan(Base):
+    __tablename__ = "mitigation_plans"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    finding_id = Column(UUID(as_uuid=True), ForeignKey("findings.id", ondelete="SET NULL"), index=True)
+    title = Column(String(500), nullable=False)
+    description = Column(Text)
+    mitigation_type = Column(String(30), nullable=False, default="temporary", index=True)
+    strategy = Column(String(80), nullable=False, index=True)
+    custom_strategy = Column(String(500))
+    proposed_mitigation = Column(Text, nullable=False)
+    expected_outcome = Column(Text)
+    implementation_steps = Column(JSONB, default=list, nullable=False)
+    root_cause = Column(Text)
+    technical_impact = Column(Text)
+    business_criticality = Column(String(30))
+    exposure_level = Column(String(30))
+    limitations = Column(Text)
+    verification_criteria = Column(Text)
+    rollback_plan = Column(Text)
+    dependencies = Column(Text)
+    related_change_request = Column(String(255))
+    potential_service_impact = Column(Text)
+    supporting_team = Column(String(255))
+    severity = Column(String(20), nullable=False, index=True)
+    priority = Column(String(20), nullable=False, default="medium", index=True)
+    status = Column(String(40), nullable=False, default="draft", index=True)
+    owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    requested_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
+    approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    verifier_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    risk_owner_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    start_date = Column(DateTime)
+    sla_deadline = Column(DateTime, nullable=False, index=True)
+    temporary_expires_at = Column(DateTime, index=True)
+    permanent_remediation_required = Column(Boolean, default=False, nullable=False)
+    permanent_remediation_due_at = Column(DateTime)
+    blocked = Column(Boolean, default=False, nullable=False, index=True)
+    blocked_reason = Column(Text)
+    verification_outcome = Column(String(30), index=True)
+    effectiveness = Column(String(30), index=True)
+    implemented_at = Column(DateTime)
+    verified_at = Column(DateTime)
+    closed_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    project = relationship("Project")
+    finding = relationship("Finding")
+    owner = relationship("User", foreign_keys=[owner_id])
+    requester = relationship("User", foreign_keys=[requested_by])
+    verifier = relationship("User", foreign_keys=[verifier_id])
+    tasks = relationship("MitigationTask", back_populates="plan", cascade="all, delete-orphan")
+    controls = relationship("MitigationControl", back_populates="plan", cascade="all, delete-orphan")
+    approvals = relationship("MitigationApproval", back_populates="plan", cascade="all, delete-orphan")
+    evidence = relationship("MitigationEvidence", back_populates="plan", cascade="all, delete-orphan")
+    verifications = relationship("MitigationVerification", back_populates="plan", cascade="all, delete-orphan")
+    risk_assessments = relationship("MitigationRiskAssessment", back_populates="plan", cascade="all, delete-orphan")
+    exceptions = relationship("MitigationException", back_populates="plan", cascade="all, delete-orphan")
+    history = relationship("MitigationHistory", back_populates="plan", cascade="all, delete-orphan")
+
+
+class MitigationPlanAsset(Base):
+    __tablename__ = "mitigation_plan_assets"
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_plans.id", ondelete="CASCADE"), primary_key=True)
+    asset_id = Column(UUID(as_uuid=True), ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True)
+    created_at = Column(DateTime, server_default=func.now())
+    asset = relationship("Asset")
+
+
+class MitigationPatchLink(Base):
+    __tablename__ = "mitigation_patch_links"
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_plans.id", ondelete="CASCADE"), primary_key=True)
+    patch_id = Column(UUID(as_uuid=True), ForeignKey("patch_records.id", ondelete="CASCADE"), primary_key=True)
+    created_at = Column(DateTime, server_default=func.now())
+    patch = relationship("PatchRecord")
+
+
+class MitigationTask(Base):
+    __tablename__ = "mitigation_tasks"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    title = Column(String(500), nullable=False)
+    description = Column(Text)
+    assignee_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), index=True)
+    due_at = Column(DateTime)
+    status = Column(String(30), default="pending", nullable=False, index=True)
+    evidence = Column(JSONB, default=list, nullable=False)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    plan = relationship("MitigationPlan", back_populates="tasks")
+    assignee = relationship("User")
+
+
+class MitigationControl(Base):
+    __tablename__ = "mitigation_controls"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    control_type = Column(String(80), nullable=False)
+    description = Column(Text, nullable=False)
+    implementation_requirements = Column(Text)
+    expected_effectiveness = Column(String(30))
+    limitations = Column(Text)
+    verification_method = Column(Text)
+    status = Column(String(30), default="planned", nullable=False)
+    expires_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    plan = relationship("MitigationPlan", back_populates="controls")
+
+
+class MitigationApproval(Base):
+    __tablename__ = "mitigation_approvals"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    stage = Column(String(40), nullable=False)
+    status = Column(String(30), default="pending", nullable=False, index=True)
+    requested_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
+    reviewer_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    comments = Column(Text)
+    decided_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    plan = relationship("MitigationPlan", back_populates="approvals")
+    reviewer = relationship("User", foreign_keys=[reviewer_id])
+
+
+class MitigationEvidence(Base):
+    __tablename__ = "mitigation_evidence"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    task_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_tasks.id", ondelete="SET NULL"), index=True)
+    evidence_type = Column(String(50), nullable=False)
+    title = Column(String(500), nullable=False)
+    reference = Column(String(1000), nullable=False)
+    metadata_json = Column(JSONB, default=dict, nullable=False)
+    sha256 = Column(String(64))
+    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    plan = relationship("MitigationPlan", back_populates="evidence")
+
+
+class MitigationVerification(Base):
+    __tablename__ = "mitigation_verifications"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    requested_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
+    verifier_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    outcome = Column(String(30))
+    comments = Column(Text)
+    residual_risk = Column(String(20))
+    evidence = Column(JSONB, default=list, nullable=False)
+    requested_at = Column(DateTime, server_default=func.now())
+    completed_at = Column(DateTime)
+    plan = relationship("MitigationPlan", back_populates="verifications")
+
+
+class MitigationRiskAssessment(Base):
+    __tablename__ = "mitigation_risk_assessments"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    initial_severity = Column(String(20), nullable=False)
+    initial_business_risk = Column(String(20))
+    exploitability = Column(String(20))
+    asset_criticality = Column(String(20))
+    internet_exposure = Column(String(20))
+    expected_residual_risk = Column(String(20))
+    actual_residual_risk = Column(String(20))
+    assessed_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
+    assessed_at = Column(DateTime, server_default=func.now())
+    plan = relationship("MitigationPlan", back_populates="risk_assessments")
+
+
+class MitigationException(Base):
+    __tablename__ = "mitigation_exceptions"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    exception_type = Column(String(40), nullable=False)
+    justification = Column(Text, nullable=False)
+    residual_risk = Column(String(20), nullable=False)
+    review_at = Column(DateTime, nullable=False)
+    approved_by = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=False)
+    created_at = Column(DateTime, server_default=func.now())
+    plan = relationship("MitigationPlan", back_populates="exceptions")
+
+
+class MitigationHistory(Base):
+    __tablename__ = "mitigation_history"
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    plan_id = Column(UUID(as_uuid=True), ForeignKey("mitigation_plans.id", ondelete="CASCADE"), nullable=False, index=True)
+    actor_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"))
+    action = Column(String(100), nullable=False, index=True)
+    previous_status = Column(String(40))
+    new_status = Column(String(40))
+    details = Column(JSONB, default=dict, nullable=False)
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+    plan = relationship("MitigationPlan", back_populates="history")
+
+
 class Evidence(Base):
     __tablename__ = "evidence"
 
@@ -526,6 +725,10 @@ class AIToolRequest(Base):
 
 class AuditLog(Base):
     __tablename__ = "audit_logs"
+    __table_args__ = (
+        Index("ix_audit_logs_created_at", "created_at"),
+        Index("ix_audit_logs_event_type_created_at", "event_type", "created_at"),
+    )
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     project_id = Column(UUID(as_uuid=True), ForeignKey("projects.id", ondelete="SET NULL"))
