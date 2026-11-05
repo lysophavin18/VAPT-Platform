@@ -1,0 +1,422 @@
+[
+  {
+    "position": 1,
+    "target": "http://bgw-portal.bill24.net",
+    "scan_id": "d9fafa11-b73e-4743-be38-53d9b2a10979",
+    "status": "running"
+  },
+  {
+    "position": 2,
+    "target": "http://bill24.net",
+    "scan_id": "683421a3-4f2e-48a5-87c1-f0b49c8b0b3f",
+    "status": "running"
+  },
+  {
+    "position": 3,
+    "target": "http://billertool.bill24.net",
+    "scan_id": "5c856056-7eb8-41bc-865a-92fcf540c159",
+    "status": "running"
+  },
+  {
+    "position": 4,
+    "target": "http://coreapi.bill24.net",
+    "scan_id": "9800718f-15b5-4f35-bfa7-f3c9236fdca6",
+    "status": "running"
+  },
+  {
+    "position": 5,
+    "target": "http://sdkapi.bill24.net",
+    "scan_id": "6751f99c-fcc7-42ec-ad63-d119bc1976a0",
+    "status": "running"
+  },
+  {
+    "position": 6,
+    "target": "http://securityapi.bill24.net",
+    "scan_id": "dfaafe1f-f9c2-4f19-b4b1-ac99f57c9ab0",
+    "status": "running"
+  },
+  {
+    "position": 7,
+    "target": "http://socketserver.bill24.net",
+    "scan_id": "7babbf79-a9a3-49ad-9f64-85cefa09155f",
+    "status": "running"
+  },
+  {
+    "position": 8,
+    "target": "http://supplierapi.bill24.net",
+    "scan_id": "3708bcb7-8372-439a-b722-70f9fa030473",
+    "status": "running"
+  },
+  {
+    "position": 9,
+    "target": "http://checkoutapi.bill24.net",
+    "scan_id": "d0fc5381-20f7-49ae-8426-c7196ddef7ec",
+    "status": "running"
+  },
+  {
+    "position": 10,
+    "target": "http://cholkiri-wss.bill24.net",
+    "scan_id": "e35b40e6-c60e-43bf-bc3e-94c353e7ba8f",
+    "status": "running"
+  },
+  {
+    "position": 11,
+    "target": "http://ecoda.bill24.net",
+    "scan_id": "9c61c1e9-7361-467c-af15-fc05280d2779",
+    "status": "running"
+  },
+  {
+    "position": 12,
+    "target": "http://fwuc-wss.bill24.net",
+    "scan_id": "51a17d25-f42c-4087-9683-f828dde337dc",
+    "status": "running"
+  },
+  {
+    "position": 13,
+    "target": "http://websdk.bill24.net",
+    "scan_id": "1888a4b8-0e3d-4e74-996c-fa4749a27eed",
+    "status": "running"
+  },
+  {
+    "position": 14,
+    "target": "http://mobiletopupapi.bill24.net",
+    "scan_id": "6a53345f-18e4-4f4d-b03f-021397e7a052",
+    "status": "running"
+  },
+  {
+    "position": 15,
+    "target": "http://mwm.bill24.net",
+    "scan_id": "dc45c161-93de-4d46-8cef-d2a6f44c7e10",
+    "status": "running"
+  },
+  {
+    "position": 16,
+    "target": "http://qlm.bill24.net",
+    "scan_id": "6ce07df1-554a-44a2-b7e2-1e21a486e829",
+    "status": "running"
+  },
+  {
+    "position": 17,
+    "target": "http://mapi.bankgateway.net",
+    "scan_id": "386ac4fa-b713-405a-8c4a-e1786de76ab8",
+    "status": "running"
+  },
+  {
+    "position": 18,
+    "target": "http://ibillflow-payment.bill24.net",
+    "scan_id": "adaca058-ce59-4007-a113-654ff183b037",
+    "status": "running"
+  },
+  {
+    "position": 19,
+    "target": "https://goodvibes-pos.bill24.io",
+    "scan_id": "fd3b5b44-0eb3-4d40-bd14-b55bef043c4f",
+    "status": "running"
+  },
+  {
+    "position": 20,
+    "target": "https://kpimanagement.bill24.io",
+    "scan_id": "6b0e9dd7-20bf-4570-b14c-e4303c4a4d35",
+    "status": "running"
+  },
+  {
+    "position": 21,
+    "target": "https://bmap.bill24.io",
+    "scan_id": "0cb20128-1093-4a8d-97b5-cb9b9fdbcdc2",
+    "status": "running"
+  },
+  {
+    "position": 22,
+    "target": "https://linkbills.bill24.io",
+    "scan_id": "b7618e03-1686-4ae6-9f76-6b902f6aab93",
+    "status": "running"
+  },
+  {
+    "position": 23,
+    "target": "https://hubportal.bill24.io",
+    "scan_id": "92d737ed-6862-4f05-85d5-b2187d51bda8",
+    "status": "running"
+  },
+  {
+    "position": 24,
+    "target": "https://portal.bill24.io",
+    "scan_id": "b467645d-153c-43e1-b02f-77d4ebf904f7",
+    "status": "running"
+  },
+  {
+    "position": 25,
+    "target": "https://billflow.bill24.io",
+    "scan_id": "9131d66a-8eb3-4e3d-8a22-763a686bd243",
+    "status": "running"
+  },
+  {
+    "position": 26,
+    "target": "https://objectstorage.bill24.io",
+    "scan_id": "64273606-13a8-41bb-a877-3319f62137de",
+    "status": "running"
+  },
+  {
+    "position": 27,
+    "target": "https://bill24.io",
+    "scan_id": "2446dd75-d958-4cc9-bc17-ee30a35f2dfd",
+    "status": "running"
+  },
+  {
+    "position": 28,
+    "target": "https://exchangerateapi.bill24.io",
+    "scan_id": "b2183ff8-dded-4b44-8688-2a161c339dea",
+    "status": "running"
+  },
+  {
+    "position": 29,
+    "target": "https://company.bill24.io",
+    "scan_id": "9f67bd03-73df-46ac-8261-4cfe808fc9ed",
+    "status": "running"
+  },
+  {
+    "position": 30,
+    "target": "https://api-billflow.bill24.io",
+    "scan_id": "dc773993-50da-401a-8c52-4b1980fe3e48",
+    "status": "running"
+  },
+  {
+    "position": 31,
+    "target": "https://bankapi.bill24.io",
+    "scan_id": "a444cff4-59d4-4971-a132-36fa359b021b",
+    "status": "running"
+  },
+  {
+    "position": 32,
+    "target": "https://business-docs.bill24.io",
+    "scan_id": "60922288-1447-4268-851b-08054d6dfafe",
+    "status": "running"
+  },
+  {
+    "position": 33,
+    "target": "https://bank-direct-debit.bill24.io",
+    "scan_id": "0e86632a-1610-4326-b42e-400bc384efc1",
+    "status": "running"
+  },
+  {
+    "position": 34,
+    "target": "https://flows.bill24.io",
+    "scan_id": "a825567a-c9d1-4b6f-b420-3656e49435a3",
+    "status": "running"
+  },
+  {
+    "position": 35,
+    "target": "https://bank-docs.bill24.io",
+    "scan_id": "3b84fedb-185d-4a91-a9ea-858566152397",
+    "status": "running"
+  },
+  {
+    "position": 36,
+    "target": "https://classic-billflow.bill24.io",
+    "scan_id": "3423744d-55dc-43cc-a7a9-917aa1ed6bbe",
+    "status": "running"
+  },
+  {
+    "position": 37,
+    "target": "https://billflow-api.bill24.io",
+    "scan_id": "37fbf28a-6917-4b73-baae-854366b34128",
+    "status": "running"
+  },
+  {
+    "position": 38,
+    "target": "https://notification-console.bill24.io",
+    "scan_id": "00823ffa-8a6d-44fd-8297-8c02e21f7114",
+    "status": "running"
+  },
+  {
+    "position": 39,
+    "target": "https://billflowapi.bill24.io",
+    "scan_id": "4d9fe67a-4cc9-4985-a845-c8da38093923",
+    "status": "running"
+  },
+  {
+    "position": 40,
+    "target": "https://biller-portal-docs.bill24.io",
+    "scan_id": "7c6c554a-7d4c-40c7-8856-9bcbcef8e08b",
+    "status": "running"
+  },
+  {
+    "position": 41,
+    "target": "https://identityapi.bill24.io",
+    "scan_id": "9787085a-1321-427d-8f37-2ba2da1dd6f3",
+    "status": "running"
+  },
+  {
+    "position": 42,
+    "target": "https://portallocationapi.bill24.io",
+    "scan_id": "292144c8-acb9-4afe-9413-28dea2faf8d5",
+    "status": "running"
+  },
+  {
+    "position": 43,
+    "target": "https://portalmediaapi.bill24.io",
+    "scan_id": "dfc85147-3c45-4009-aa2d-5d986edfbd9e",
+    "status": "running"
+  },
+  {
+    "position": 44,
+    "target": "https://pgwmoduleapi.bill24.io",
+    "scan_id": "0be31000-9cf0-41ab-9c1c-7dc92b9bd03d",
+    "status": "running"
+  },
+  {
+    "position": 45,
+    "target": "https://authenticationapi.bill24.io",
+    "scan_id": "ef27980f-6473-47f4-946f-2a32db7dcf93",
+    "status": "running"
+  },
+  {
+    "position": 46,
+    "target": "https://media.bill24.io",
+    "scan_id": "2ed076ad-20a8-48bf-8675-3d963d1d81a7",
+    "status": "running"
+  },
+  {
+    "position": 47,
+    "target": "https://socketserve.bill24.io",
+    "scan_id": "290b328a-2f4e-4fdb-a31d-eed057210774",
+    "status": "running"
+  },
+  {
+    "position": 48,
+    "target": "https://checkoutpage.bill24.io",
+    "scan_id": "058724f5-45ae-4c64-a0e2-123040b12d84",
+    "status": "running"
+  },
+  {
+    "position": 49,
+    "target": "https://managementapi.bill24.io",
+    "scan_id": "69081c08-d508-401a-ae94-a75f125e77fc",
+    "status": "running"
+  },
+  {
+    "position": 50,
+    "target": "https://merchantapi.bill24.io",
+    "scan_id": "da09fe56-fdb8-4910-8583-ec6e42595e1f",
+    "status": "running"
+  },
+  {
+    "position": 51,
+    "target": "https://bank-docs-checkout.bill24.io",
+    "scan_id": "82b6e5a2-69b3-480c-aa51-5405ec964a96",
+    "status": "running"
+  },
+  {
+    "position": 52,
+    "target": "https://billmobile.bill24.io",
+    "scan_id": "22aa43b0-f5c7-4b09-9432-a6de1b0f8c18",
+    "status": "running"
+  },
+  {
+    "position": 53,
+    "target": "https://www.bill24.io",
+    "scan_id": "63f6c078-5d98-499a-8434-7a414b75ac67",
+    "status": "running"
+  },
+  {
+    "position": 54,
+    "target": "https://mobileapi.bill24.io",
+    "scan_id": "40f20719-f053-4ed4-bfa0-02038ba5388c",
+    "status": "running"
+  },
+  {
+    "position": 55,
+    "target": "https://get-summary.bill24.io",
+    "scan_id": "0bb316df-bea0-473c-8c80-1ae7a43e4178",
+    "status": "running"
+  },
+  {
+    "position": 56,
+    "target": "https://invoice-docs.bill24.io",
+    "scan_id": "58f24790-462f-4fde-b21e-0c252f9d4feb",
+    "status": "running"
+  },
+  {
+    "position": 57,
+    "target": "https://doc.bill24.io",
+    "scan_id": "b2ad9d42-7897-49a5-8742-8d002e1ac2dc",
+    "status": "running"
+  },
+  {
+    "position": 58,
+    "target": "https://hubportal-manual.bill24.io",
+    "scan_id": "c4b42ada-0443-4ad6-b080-10a3b3ba51ff",
+    "status": "running"
+  },
+  {
+    "position": 59,
+    "target": "https://paymentmethodbank.bill24.io",
+    "scan_id": "7bd77931-72c8-468f-bee4-0b8947ba0707",
+    "status": "running"
+  },
+  {
+    "position": 60,
+    "target": "https://entertainment-services.bill24.io",
+    "scan_id": "91c72c5e-48a8-4bf1-9855-a2670f87d9c8",
+    "status": "running"
+  },
+  {
+    "position": 61,
+    "target": "https://notificationapi.bill24.io",
+    "scan_id": "0bcf5f88-c664-4a26-926d-fcabb09f5140",
+    "status": "running"
+  },
+  {
+    "position": 62,
+    "target": "https://socketserver.bill24.io",
+    "scan_id": "987e7f45-2001-4ee4-a6c6-c62fc835e4e4",
+    "status": "running"
+  },
+  {
+    "position": 63,
+    "target": "https://payments.bill24.io",
+    "scan_id": "ad54ab36-52cb-40c0-b0ed-e3a3c70fe3f5",
+    "status": "running"
+  },
+  {
+    "position": 64,
+    "target": "http://speedaccount.com",
+    "scan_id": "0e547e6b-cda1-4a7d-9a06-3331216ba5f1",
+    "status": "running"
+  },
+  {
+    "position": 65,
+    "target": "http://loan.speedaccount.com",
+    "scan_id": "7afd427e-1e77-4069-8248-121303d174f9",
+    "status": "running"
+  },
+  {
+    "position": 66,
+    "target": "http://ls.speedaccount.com",
+    "scan_id": "2a81dd09-cd79-45c7-9600-f106094cdc45",
+    "status": "running"
+  },
+  {
+    "position": 67,
+    "target": "http://ls-chain.speedaccount.com",
+    "scan_id": "fb3a7ba7-bc3a-456c-9136-f7789e52c3b5",
+    "status": "running"
+  },
+  {
+    "position": 68,
+    "target": "http://ls-condo.speedaccount.com",
+    "scan_id": "75d0b0d9-d57a-410b-b0af-16853df381fc",
+    "status": "running"
+  },
+  {
+    "position": 69,
+    "target": "http://ls-socket.speedaccount.com",
+    "scan_id": "bb45af37-9cbc-428d-bafe-ccca33fd2c76",
+    "status": "running"
+  },
+  {
+    "position": 70,
+    "target": "http://qe-fx.speedaccount.com",
+    "scan_id": "03ecde89-578d-44db-9182-5c1c649fb727",
+    "status": "running"
+  }
+]

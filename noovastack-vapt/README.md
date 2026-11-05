@@ -321,11 +321,11 @@ Current local model configuration:
 
 | Setting | Value |
 | --- | --- |
-| Provider | `ollama` |
+| Provider | `noovastack-local` |
 | API style | OpenAI-compatible `/chat/completions` |
-| Base URL | `http://192.168.220.204:11434/v1` |
-| Model | `qwen3-coder:30b-64k` |
-| Context window | 64K |
+| Base URL | `https://chat.noovastack.com/api` |
+| Model | `qwen3.6-coder:35b-32k` |
+| Context window | 32K |
 | Timeout | 240 seconds |
 | Max output tokens | 4096 |
 | Temperature | 0.2 |

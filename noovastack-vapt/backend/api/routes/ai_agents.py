@@ -8,7 +8,10 @@ rewriting the frontend.
 """
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import re
 from copy import deepcopy
 from datetime import datetime
 from typing import Any
@@ -284,9 +287,10 @@ async def local_model_health(current_user: User = Depends(require_user)):
 
 @router.post("/local-chat")
 async def local_chat(request: LocalAIRequest, db: AsyncSession = Depends(get_db), current_user: User = Depends(require_user)):
-    model = request.model or PRIMARY_AI_MODEL
-    if model != PRIMARY_AI_MODEL:
-        raise HTTPException(status_code=400, detail=f"Only the configured primary local model is allowed: {PRIMARY_AI_MODEL}")
+    # The server is authoritative for model routing. Older browser bundles may
+    # still submit the previously configured model after an administrator
+    # changes providers; ignore that stale hint instead of breaking chat.
+    model = PRIMARY_AI_MODEL
 
     health = await check_local_model()
     if not health["available"]:
@@ -377,11 +381,35 @@ async def local_chat(request: LocalAIRequest, db: AsyncSession = Depends(get_db)
     }
 
     async def stream_tokens():
+        # Flush response headers immediately and keep the connection active while
+        # a large model is still preparing its first token. Cloudflare closes an
+        # otherwise idle origin response before the provider timeout is reached.
+        yield ": connected\n\n"
+        last_client_event = asyncio.get_running_loop().time()
         try:
             async with httpx.AsyncClient(timeout=float(settings.AI_TIMEOUT_SECONDS), trust_env=False) as client:
                 async with client.stream("POST", f"{settings.AI_BASE_URL.rstrip('/')}/chat/completions", headers=ai_headers(), json=payload) as response:
                     response.raise_for_status()
-                    async for line in response.aiter_lines():
+                    lines = response.aiter_lines().__aiter__()
+                    pending_line: asyncio.Task[str] | None = None
+                    while True:
+                        if pending_line is None:
+                            pending_line = asyncio.create_task(lines.__anext__())
+                        completed, _ = await asyncio.wait({pending_line}, timeout=15)
+                        if not completed:
+                            yield ": keep-alive\n\n"
+                            last_client_event = asyncio.get_running_loop().time()
+                            continue
+                        try:
+                            line = pending_line.result()
+                        except StopAsyncIteration:
+                            break
+                        finally:
+                            pending_line = None
+                        now = asyncio.get_running_loop().time()
+                        if now - last_client_event >= 15:
+                            yield ": keep-alive\n\n"
+                            last_client_event = now
                         if not line.startswith("data: "):
                             continue
                         data = line[6:]
@@ -400,11 +428,19 @@ async def local_chat(request: LocalAIRequest, db: AsyncSession = Depends(get_db)
                         token = delta.get("content")
                         if token:
                             yield f"data: {json.dumps({'type': 'token', 'token': token})}\n\n"
+                            last_client_event = asyncio.get_running_loop().time()
         except httpx.HTTPError as exc:
             yield f"data: {json.dumps({'type': 'error', 'error': f'Local AI endpoint failed: {exc}'})}\n\n"
         yield f"data: {json.dumps({'type': 'done', 'conversation_id': request.conversation_id or f'chat-{uuid4().hex[:8]}', 'message_id': f'msg-{uuid4().hex[:8]}', 'mode': mode_key, 'model': {'provider': AI_PROVIDER_NAME, 'name': model}, 'created_at': datetime.utcnow().isoformat()})}\n\n"
 
-    return StreamingResponse(stream_tokens(), media_type="text/event-stream")
+    return StreamingResponse(
+        stream_tokens(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 async def execute_agent_tool_request(db: AsyncSession, data: AgentToolRequest, current_user: User) -> dict:
@@ -1027,11 +1063,12 @@ async def check_local_model() -> dict[str, Any]:
     models = data.get("data") if isinstance(data, dict) else []
     model_ids = {model.get("id") for model in models if isinstance(model, dict)}
     available = PRIMARY_AI_MODEL in model_ids
+    context_match = re.search(r"(?<!\d)(\d+)k(?:\D|$)", PRIMARY_AI_MODEL, re.IGNORECASE)
     return {
         "provider": AI_PROVIDER_NAME,
         "model": PRIMARY_AI_MODEL,
         "base_url": settings.AI_BASE_URL,
-        "context_window": "64K",
+        "context_window": f"{context_match.group(1)}K" if context_match else "Provider-defined",
         "deployment": "Local",
         "available": available,
         "status": "healthy" if available else "model_missing",
@@ -1071,18 +1108,18 @@ async def update_ai_config(
     current_user: User = Depends(require_user),
 ):
     """Persist AI provider settings to the .env file (admin only)."""
-    from auth import require_admin as _require_admin
-    from fastapi import Request
-    import os
+    from pathlib import Path
 
     if getattr(current_user, "role", None) != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    env_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), ".env")
-    if not os.path.exists(env_path):
+    # Docker Compose mounts noovastack-vapt/.env at AI_ENV_FILE so changes
+    # made in Administration survive container recreation.
+    env_path = Path(os.getenv("AI_ENV_FILE", str(Path(__file__).resolve().parents[3] / ".env")))
+    if not env_path.exists():
         raise HTTPException(status_code=500, detail=".env file not found — update manually")
 
-    with open(env_path, "r") as f:
+    with env_path.open("r") as f:
         lines = f.readlines()
 
     updates: dict[str, str] = {}
@@ -1115,18 +1152,28 @@ async def update_ai_config(
         if key not in found_keys:
             new_lines.append(f"{key}={val}\n")
 
-    with open(env_path, "w") as f:
+    with env_path.open("w") as f:
         f.writelines(new_lines)
+
+    agents_updated = 0
+    if payload.model is not None or payload.provider is not None:
+        agents = (await db.execute(select(AIAgent))).scalars().all()
+        for agent in agents:
+            if payload.model is not None:
+                agent.model = payload.model
+            if payload.provider is not None:
+                agent.provider = payload.provider
+            agents_updated += 1
 
     db.add(AuditLog(
         actor_id=current_user.id,
         event_type="administration",
         action="ai_config_updated",
-        details={"updated_keys": list(updates.keys())},
+        details={"updated_keys": list(updates.keys()), "agents_updated": agents_updated},
     ))
     await db.commit()
 
-    return {"message": "AI configuration saved. Restart the backend for changes to take effect.", "updated": list(updates.keys())}
+    return {"message": "AI configuration saved. Restart the backend for changes to take effect.", "updated": list(updates.keys()), "agents_updated": agents_updated}
 
 
 async def record_action(db: AsyncSession, current_user: User, action: str, details: dict[str, Any]):

@@ -57,6 +57,15 @@ export interface AssetGraphNode {
   label: string;
   type: string;
   scope_status?: string;
+  value?: string;
+  source?: string | null;
+  discovery_method?: string | null;
+  environment?: string | null;
+  approval_status?: string | null;
+  tags?: string[];
+  technology?: Record<string, unknown>;
+  ports_services?: Record<string, unknown>;
+  last_observed_at?: string | null;
 }
 
 export interface AssetGraphEdge {

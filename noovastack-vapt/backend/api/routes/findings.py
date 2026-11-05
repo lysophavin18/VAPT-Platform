@@ -13,6 +13,35 @@ from api.schemas import FindingCommentCreate, FindingCommentResponse, FindingRes
 router = APIRouter()
 
 
+async def _add_finding_audit(
+    db: AsyncSession,
+    finding: Finding,
+    current_user: User,
+    action: str,
+    previous_status: str,
+) -> None:
+    scan_context = (await db.execute(
+        select(Scan.project_id, Scan.name).where(Scan.id == finding.scan_id)
+    )).one_or_none()
+    db.add(AuditLog(
+        project_id=scan_context.project_id if scan_context else None,
+        scan_id=finding.scan_id,
+        actor_id=current_user.id,
+        event_type="finding",
+        action=action,
+        details={
+            "finding_id": str(finding.id),
+            "title": finding.title,
+            "severity": finding.severity,
+            "cvss_score": finding.cvss_score,
+            "previous_status": previous_status,
+            "new_status": finding.status,
+            "scan_name": scan_context.name if scan_context else None,
+            "actor_email": current_user.email,
+        },
+    ))
+
+
 @router.get("", response_model=list[FindingResponse])
 async def list_findings(
     project_id: str | None = None,
@@ -57,8 +86,10 @@ async def verify_finding(
     current_user: User = Depends(require_user),
 ):
     finding = await get_finding_or_404(db, finding_id, current_user)
+    previous = finding.status
     finding.integrity_status = "verified"
     finding.status = "confirmed"
+    await _add_finding_audit(db, finding, current_user, "finding_verified", previous)
     await db.commit()
     await db.refresh(finding)
     return finding
@@ -76,14 +107,7 @@ async def update_finding_status(
     finding.status = data.status
     if data.status == "fixed":
         finding.integrity_status = "verified"
-    db.add(AuditLog(
-        project_id=None,
-        scan_id=finding.scan_id,
-        actor_id=current_user.id,
-        event_type="finding",
-        action="status_updated",
-        details={"finding_id": str(finding.id), "previous_status": previous, "new_status": data.status},
-    ))
+    await _add_finding_audit(db, finding, current_user, "finding_status_updated", previous)
     await db.commit()
     await db.refresh(finding)
     return finding
@@ -96,7 +120,9 @@ async def reject_finding(
     current_user: User = Depends(require_user),
 ):
     finding = await get_finding_or_404(db, finding_id, current_user)
+    previous = finding.status
     finding.status = "rejected"
+    await _add_finding_audit(db, finding, current_user, "finding_rejected", previous)
     await db.commit()
     await db.refresh(finding)
     return finding
@@ -109,7 +135,9 @@ async def mark_false_positive(
     current_user: User = Depends(require_user),
 ):
     finding = await get_finding_or_404(db, finding_id, current_user)
+    previous = finding.status
     finding.status = "false_positive"
+    await _add_finding_audit(db, finding, current_user, "finding_marked_false_positive", previous)
     await db.commit()
     await db.refresh(finding)
     return finding

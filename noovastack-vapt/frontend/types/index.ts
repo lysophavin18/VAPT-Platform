@@ -9,3 +9,5 @@ export * from './schedule';
 export * from './user';
 export * from './ai-agent';
 export * from './dashboard';
+export * from './patch';
+export * from './mitigation';

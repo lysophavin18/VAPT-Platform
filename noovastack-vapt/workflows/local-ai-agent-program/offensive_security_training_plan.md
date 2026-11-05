@@ -179,7 +179,7 @@ Avoid first fine-tuning on:
 - Payload generation.
 - Bypass techniques.
 - Real customer transcripts.
-- Long 64K contexts.
+- Long 32K contexts.
 
 ## Dataset Format
 
@@ -252,7 +252,7 @@ Do not train on examples that:
 
 1. Add or improve examples in `datasets/authorized_vuln_research_examples.jsonl`.
 2. Add frozen evaluation cases in `evals/authorized_vuln_research_eval.jsonl`.
-3. Test current `qwen3-coder:30b-64k` behavior with the examples.
+3. Test current `qwen3.6-coder:35b-32k` behavior with the examples.
 4. Improve prompts and RAG before fine-tuning.
 5. Run evaluations and compare results.
 6. Only then prepare LoRA training files.

@@ -4,9 +4,9 @@ import { FormEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { z } from 'zod';
 import {
   AlertTriangle, Archive, Bot, CheckCircle2, ChevronRight, Clock,
-  Copy, FileText, Info, Loader2, Menu, MessageSquarePlus, MoreHorizontal,
+  Copy, Download, FileText, Info, Loader2, Menu, MessageSquarePlus, MoreHorizontal,
   Pin, RefreshCw, Search, Send, ShieldCheck, Sparkles, Square,
-  Trash2, XCircle, Zap,
+  ThumbsDown, ThumbsUp, Trash2, XCircle, Zap,
 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api-client';
 import { useAuth } from '@/hooks/use-auth';
@@ -15,7 +15,6 @@ import { useEngagements } from '@/hooks/use-engagements';
 import { MarkdownLite } from '@/lib/markdown-lite';
 import type { User } from '@/types';
 
-const PRIMARY_MODEL = 'deepseek-v4-flash';
 const HISTORY_KEY_PREFIX = 'noovastack.security.chatHistory';
 const MAX_INPUT = 12000;
 
@@ -47,13 +46,13 @@ const assistantContentSchema = z.object({
 }).passthrough();
 
 type AssistantContent = z.infer<typeof assistantContentSchema>;
-type ChatMessage = { id: string; role: 'user' | 'assistant' | 'error'; content: string | AssistantContent; mode?: string; model?: string; createdAt: string; raw?: unknown; parserWarning?: string };
+type ChatMessage = { id: string; role: 'user' | 'assistant' | 'error'; content: string | AssistantContent; mode?: string; model?: string; createdAt: string; raw?: unknown; parserWarning?: string; durationMs?: number; stopped?: boolean };
 type ChatSession = { id: string; title: string; mode: string; messages: ChatMessage[]; updatedAt: string; pinned?: boolean; archived?: boolean; contextProjectId?: string; contextEngagementId?: string; contextFindingId?: string };
 type ContextPatch = Partial<Pick<ChatSession, 'contextProjectId' | 'contextEngagementId' | 'contextFindingId'>>;
 type Health = { provider: string; model: string; context_window: string; deployment: string; available: boolean; status: string };
 
 const welcomeMessage: ChatMessage = {
-  id: 'welcome', role: 'assistant', mode: 'general', model: PRIMARY_MODEL, createdAt: new Date().toISOString(),
+  id: 'welcome', role: 'assistant', mode: 'general', createdAt: new Date().toISOString(),
   content: { type: 'plain', message: "Hi! 👋 I'm your AI security copilot. Tell me about a target, a finding, or a fix you're working on — I'll help you plan safely, triage evidence, and turn vulnerabilities into actionable steps.\n\nI explain and recommend; a human always makes the final call on scope, findings, and reports.", human_review_required: false },
 };
 
@@ -85,6 +84,18 @@ function parseAssistantResponse(text: string): { content: AssistantContent; warn
   return { content: { type: 'plain', message: text } as AssistantContent };
 }
 
+function streamPreview(text: string): string {
+  const cleaned = text.replace(/^```(?:json)?\s*/i, '').trimStart();
+  if (!cleaned.startsWith('{')) return cleaned;
+  const match = cleaned.match(/"(?:message|summary)"\s*:\s*"((?:\\.|[^"\\])*)/);
+  if (!match) return '';
+  return match[1]
+    .replace(/\\n/g, '\n')
+    .replace(/\\t/g, '\t')
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, '\\');
+}
+
 function getChatErrorText(error: unknown): string {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
@@ -112,11 +123,13 @@ export default function SecurityAssistantPage() {
   const [prompt, setPrompt] = useState('');
   const [loading, setLoading] = useState(false);
   const [health, setHealth] = useState<Health | null>(null);
+  const [healthLoading, setHealthLoading] = useState(false);
   const [search, setSearch] = useState('');
   const [showHistory, setShowHistory] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
   const streamingMessageIdRef = useRef<string | null>(null);
   const streamingTextRef = useRef('');
+  const streamFlushTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastUserPromptRef = useRef('');
 
   const activeSession = sessions.find(s => s.id === activeId) ?? sessions[0];
@@ -126,39 +139,71 @@ export default function SecurityAssistantPage() {
   useEffect(() => { const saved = loadChatHistory(historyKey); const next = saved.length ? saved : [createChatSession()]; setSessions(next); setActiveId(next[0].id); }, [historyKey]);
   useEffect(() => { saveChatHistory(historyKey, sessions); }, [historyKey, sessions]);
   useEffect(() => { if (activeSession) setMode(activeSession.mode); }, [activeSession?.id]);
-  useEffect(() => { if (!token) return; api.localAiHealth(token).then(setHealth).catch(() => setHealth({ provider: 'opencode', model: PRIMARY_MODEL, context_window: '64K', deployment: 'Cloud', available: false, status: 'unavailable' })); }, [token]);
+  useEffect(() => { if (token) void refreshHealth(); }, [token]);
+  useEffect(() => () => { if (streamFlushTimerRef.current) clearTimeout(streamFlushTimerRef.current); }, []);
+
+  async function refreshHealth() {
+    if (!token || healthLoading) return;
+    setHealthLoading(true);
+    try { setHealth(await api.localAiHealth(token)); }
+    catch { setHealth({ provider: 'configured', model: 'Configured primary model', context_window: 'Provider-defined', deployment: 'Local', available: false, status: 'unavailable' }); }
+    finally { setHealthLoading(false); }
+  }
 
   async function sendMessage(event?: FormEvent, forcedText?: string) {
     event?.preventDefault();
     const text = (forcedText ?? prompt).trim();
     if (!token) { updateActiveSession(s => ({ ...s, messages: [...s.messages, buildAuthErrorMessage()], updatedAt: new Date().toISOString() })); return; }
     if (!text || loading || !authorizationAvailable) return;
+    const sessionId = activeSession.id;
+    const startedAt = Date.now();
     lastUserPromptRef.current = text;
     const userMessage: ChatMessage = { id: `msg-${Date.now()}`, role: 'user', content: text, mode, createdAt: new Date().toISOString() };
-    updateActiveSession(s => ({ ...s, title: s.title === 'New chat' ? makeTitle(text) : s.title, messages: [...s.messages, userMessage], updatedAt: new Date().toISOString() }));
+    updateSessionById(sessionId, s => ({ ...s, title: s.title === 'New chat' ? makeTitle(text) : s.title, messages: [...s.messages, userMessage], updatedAt: new Date().toISOString() }));
     if (!forcedText) setPrompt('');
     setLoading(true);
     abortRef.current = new AbortController();
     const assistantId = `msg-${Date.now()}`;
     streamingMessageIdRef.current = assistantId;
     streamingTextRef.current = '';
-    const assistantMessage: ChatMessage = { id: assistantId, role: 'assistant', content: '__STREAMING__', mode, model: PRIMARY_MODEL, createdAt: new Date().toISOString() };
-    updateActiveSession(s => ({ ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date().toISOString() }));
+    const assistantMessage: ChatMessage = { id: assistantId, role: 'assistant', content: '__STREAMING__', mode, model: health?.model, createdAt: new Date().toISOString() };
+    updateSessionById(sessionId, s => ({ ...s, messages: [...s.messages, assistantMessage], updatedAt: new Date().toISOString() }));
+
+    const flushStreamPreview = () => {
+      streamFlushTimerRef.current = null;
+      const preview = streamPreview(streamingTextRef.current);
+      updateSessionById(sessionId, s => ({
+        ...s,
+        messages: s.messages.map(m => m.id === assistantId ? { ...m, content: { type: 'streaming', message: preview } } : m),
+        updatedAt: new Date().toISOString(),
+      }));
+    };
     try {
-      await api.localAiChatStream({ prompt: text, mode, model: PRIMARY_MODEL, conversation_id: activeSession.id, project_id: activeSession.contextProjectId, engagement_id: activeSession.contextEngagementId, finding_id: activeSession.contextFindingId }, token, abortRef.current.signal, (chunk) => {
-        if (chunk.type === 'token' && chunk.token) { streamingTextRef.current += chunk.token; }
+      await api.localAiChatStream({ prompt: text, mode, conversation_id: sessionId, project_id: activeSession.contextProjectId, engagement_id: activeSession.contextEngagementId, finding_id: activeSession.contextFindingId }, token, abortRef.current.signal, (chunk) => {
+        if (chunk.type === 'token' && chunk.token) {
+          streamingTextRef.current += chunk.token;
+          if (!streamFlushTimerRef.current) streamFlushTimerRef.current = setTimeout(flushStreamPreview, 45);
+        }
         else if (chunk.type === 'error') { throw new ApiError(502, chunk.error || 'Stream failed.'); }
       });
+      if (streamFlushTimerRef.current) { clearTimeout(streamFlushTimerRef.current); streamFlushTimerRef.current = null; }
       const parsed = parseAssistantResponse(streamingTextRef.current);
-      updateActiveSession(s => ({ ...s, messages: s.messages.map(m => m.id === assistantId ? { ...m, content: parsed.content, raw: streamingTextRef.current, parserWarning: parsed.warning } : m), updatedAt: new Date().toISOString() }));
+      updateSessionById(sessionId, s => ({ ...s, messages: s.messages.map(m => m.id === assistantId ? { ...m, content: parsed.content, raw: streamingTextRef.current, parserWarning: parsed.warning, durationMs: Date.now() - startedAt } : m), updatedAt: new Date().toISOString() }));
     } catch (error) {
-      if ((error as Error).name === 'AbortError') return;
-      updateActiveSession(s => ({ ...s, messages: s.messages.map(m => m.id === assistantId ? { ...m, content: { type: 'error', status: getChatErrorKind(error), message: getChatErrorText(error) } } : m), updatedAt: new Date().toISOString() }));
+      if (streamFlushTimerRef.current) { clearTimeout(streamFlushTimerRef.current); streamFlushTimerRef.current = null; }
+      if ((error as Error).name === 'AbortError') {
+        const partial = streamingTextRef.current;
+        const parsed = partial ? parseAssistantResponse(partial) : { content: { type: 'plain', message: 'Generation stopped before a response was produced.' } as AssistantContent };
+        updateSessionById(sessionId, s => ({ ...s, messages: s.messages.map(m => m.id === assistantId ? { ...m, content: parsed.content, raw: partial, stopped: true, durationMs: Date.now() - startedAt } : m), updatedAt: new Date().toISOString() }));
+      } else {
+        updateSessionById(sessionId, s => ({ ...s, messages: s.messages.map(m => m.id === assistantId ? { ...m, content: { type: 'error', status: getChatErrorKind(error), message: getChatErrorText(error) }, durationMs: Date.now() - startedAt } : m), updatedAt: new Date().toISOString() }));
+      }
     } finally {
       setLoading(false); abortRef.current = null; streamingMessageIdRef.current = null; streamingTextRef.current = '';
     }
   }
 
+  function updateSessionById(id: string, updater: (s: ChatSession) => ChatSession) { setSessions(curr => sortSessions(curr.map(s => s.id === id ? updater(s) : s))); }
   function updateActiveSession(updater: (s: ChatSession) => ChatSession) { setSessions(curr => sortSessions(curr.map(s => s.id === activeId ? updater(s) : s))); }
   function changeMode(next: string) { setMode(next); updateActiveSession(s => ({ ...s, mode: next, updatedAt: new Date().toISOString() })); }
   function startNewChat() { const s = createChatSession(); setSessions(curr => [s, ...curr]); setActiveId(s.id); setMode(s.mode); setPrompt(''); }
@@ -168,6 +213,19 @@ export default function SecurityAssistantPage() {
   function patchSession(id: string, patch: Partial<ChatSession>) { setSessions(curr => sortSessions(curr.map(s => s.id === id ? { ...s, ...patch, updatedAt: new Date().toISOString() } : s))); }
   function retryLastMessage() { if (lastUserPromptRef.current) sendMessage(undefined, lastUserPromptRef.current); }
   function setSessionContext(patch: ContextPatch) { updateActiveSession(s => ({ ...s, ...patch, updatedAt: new Date().toISOString() })); }
+  function exportConversation() {
+    const body = activeSession.messages.map(message => {
+      const content = typeof message.content === 'string' ? message.content : message.content.message ?? message.content.summary ?? JSON.stringify(message.content, null, 2);
+      return `## ${message.role === 'user' ? 'You' : 'NoovaStack AI'}\n\n${content}`;
+    }).join('\n\n---\n\n');
+    const blob = new Blob([`# ${activeSession.title}\n\n${body}\n`], { type: 'text/markdown;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${activeSession.title.replace(/[^a-z0-9]+/gi, '-').replace(/^-|-$/g, '').toLowerCase() || 'ai-conversation'}.md`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
 
   return (
     <main className="min-h-[calc(100vh-88px)] bg-gray-50 dark:bg-gray-950 text-gray-900 dark:text-gray-100">
@@ -234,16 +292,20 @@ export default function SecurityAssistantPage() {
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <h1 className="text-[15px] font-bold text-gray-900 dark:text-gray-100 truncate">NoovaStack AI Assistant</h1>
-                    <span className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${health?.available ? 'bg-emerald-500/15 text-emerald-600' : health ? 'bg-red-500/15 text-red-500' : 'bg-amber-500/15 text-amber-600'}`}>
+                    <button type="button" onClick={() => void refreshHealth()} title="Check model connection" className={`shrink-0 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold transition-opacity hover:opacity-80 ${health?.available ? 'bg-emerald-500/15 text-emerald-600' : health ? 'bg-red-500/15 text-red-500' : 'bg-amber-500/15 text-amber-600'}`}>
                       <span className={`h-1.5 w-1.5 rounded-full ${health?.available ? 'bg-emerald-500 animate-pulse' : health ? 'bg-red-500' : 'bg-amber-500'}`} />
-                      {health?.available ? 'Connected' : health ? 'Unavailable' : 'Checking…'}
-                    </span>
+                      {healthLoading ? 'Checking…' : health?.available ? 'Connected' : health ? 'Unavailable' : 'Checking…'}
+                    </button>
                   </div>
                   {health?.model && <p className="text-[11px] text-gray-500 dark:text-gray-400 truncate">{health.model} · {health.provider}</p>}
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 <ContextSelector session={activeSession} onContextChange={setSessionContext} />
+
+                <button type="button" onClick={exportConversation} title="Export conversation" aria-label="Export conversation" className="grid h-8 w-8 place-items-center rounded-xl border border-gray-200 bg-white text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:border-gray-700 dark:bg-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-100">
+                  <Download className="h-3.5 w-3.5" />
+                </button>
 
                 <button onClick={startNewChat} className="flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-violet-500 to-indigo-600 px-3 py-1.5 text-[12px] font-semibold text-white shadow-sm hover:opacity-90 transition-opacity">
                   <MessageSquarePlus className="h-3.5 w-3.5" /> New Chat
@@ -266,7 +328,7 @@ export default function SecurityAssistantPage() {
           </div>
 
           {/* Messages */}
-          <MessageList messages={activeSession.messages} loading={loading} mode={activeMode} user={user} onUsePrompt={setPrompt} onRetry={retryLastMessage} />
+          <MessageList messages={activeSession.messages} loading={loading} mode={activeMode} user={user} onUsePrompt={(text) => void sendMessage(undefined, text)} onRetry={retryLastMessage} />
 
           {/* Composer */}
           <Composer value={prompt} setValue={setPrompt} onSubmit={sendMessage} onStop={stopGeneration} loading={loading} disabled={!authorizationAvailable} authLoading={authLoading} mode={activeMode} />
@@ -315,12 +377,15 @@ function ContextSelector({ session, onContextChange }: { session: ChatSession; o
   const { data: projects } = useProjects();
   const { data: engagements } = useEngagements(session.contextProjectId ?? undefined);
   const hasCtx = session.contextProjectId || session.contextEngagementId || session.contextFindingId;
+  const projectName = projects?.find((project: { id: string; name: string }) => project.id === session.contextProjectId)?.name;
+  const engagementName = engagements?.find((engagement: { id: string; name: string }) => engagement.id === session.contextEngagementId)?.name;
+  const contextLabel = engagementName ?? projectName ?? 'Context set';
 
   return (
     <div className="relative group">
       <button className={`flex items-center gap-1.5 rounded-xl border px-3 py-1.5 text-[12px] font-medium transition-colors ${hasCtx ? 'border-violet-400/40 bg-violet-500/10 text-violet-600' : 'border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:bg-gray-800 hover:text-gray-900 dark:text-gray-100'}`}>
         <ChevronRight className="h-3.5 w-3.5" />
-        {hasCtx ? 'Context set' : 'Set context'}
+        <span className="max-w-40 truncate">{hasCtx ? contextLabel : 'Set context'}</span>
       </button>
       <div className="absolute right-0 top-full z-50 mt-2 hidden w-72 rounded-2xl border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 p-3 shadow-xl group-focus-within:block group-hover:block">
         <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-gray-500 dark:text-gray-400">Session context</p>
@@ -426,7 +491,7 @@ function UserBubble({ message, user }: { message: ChatMessage; user: User | null
         </div>
         <div className="mt-1 flex items-center justify-end gap-2">
           <span className="text-[10px] text-gray-500 dark:text-gray-400">{formatTime(message.createdAt)}</span>
-          <button onClick={copy} className="hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100">
+          <button aria-label="Copy your message" title="Copy" onClick={copy} className="flex h-5 w-5 items-center justify-center rounded text-gray-500 opacity-70 hover:text-gray-900 hover:opacity-100 dark:text-gray-400 dark:hover:text-gray-100">
             {copied ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
           </button>
         </div>
@@ -439,17 +504,23 @@ function UserBubble({ message, user }: { message: ChatMessage; user: User | null
 function AssistantBubble({ message, mode, onRetry }: { message: ChatMessage; mode: typeof modes[0]; onRetry: () => void }) {
   const content = message.content;
   const [copied, setCopied] = useState(false);
+  const [feedback, setFeedback] = useState<'up' | 'down' | null>(null);
+  const displayedMode = modes.find(item => item.id === message.mode) ?? mode;
 
   if (content === '__STREAMING__' || (typeof content === 'object' && (content as AssistantContent).type === 'streaming')) {
+    const preview = typeof content === 'object' ? (content as AssistantContent).message : '';
     return (
       <div className="flex items-start gap-3">
         <AvatarBot />
-        <div className="rounded-2xl rounded-tl-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3">
-          <div className="flex gap-1 items-center">
+        <div className="max-w-[85%] rounded-2xl rounded-tl-sm bg-white dark:bg-gray-900 border border-violet-300/60 dark:border-violet-700/60 px-4 py-3 shadow-sm">
+          <div className="mb-2 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-wider text-violet-600 dark:text-violet-400">
+            <Loader2 className="h-3 w-3 animate-spin" /> Qwen is generating
+          </div>
+          {preview ? <div className="text-[13.5px] leading-relaxed text-gray-900 dark:text-gray-100"><MarkdownLite text={preview} /><span className="ml-0.5 inline-block h-4 w-0.5 animate-pulse bg-violet-500 align-middle" /></div> : <div className="flex gap-1 items-center py-1">
             <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce [animation-delay:0ms]" />
             <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce [animation-delay:150ms]" />
             <span className="h-2 w-2 rounded-full bg-violet-400 animate-bounce [animation-delay:300ms]" />
-          </div>
+          </div>}
         </div>
       </div>
     );
@@ -485,8 +556,8 @@ function AssistantBubble({ message, mode, onRetry }: { message: ChatMessage; mod
         <div className="rounded-2xl rounded-tl-sm bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 px-4 py-3 shadow-sm">
           {/* Mode badge */}
           <div className="mb-2 flex items-center gap-1.5">
-            <span className="text-[11px]">{mode.emoji}</span>
-            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{mode.label}</span>
+            <span className="text-[11px]">{displayedMode.emoji}</span>
+            <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400">{displayedMode.label}</span>
             {c?.human_review_required && (
               <span className="ml-auto inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-2 py-0.5 text-[9px] font-semibold text-amber-600">
                 <AlertTriangle className="h-2.5 w-2.5" /> Needs review
@@ -521,10 +592,18 @@ function AssistantBubble({ message, mode, onRetry }: { message: ChatMessage; mod
         <div className="mt-1 flex items-center gap-2 px-1">
           <span className="text-[10px] text-gray-500 dark:text-gray-400">{formatTime(message.createdAt)}</span>
           {message.model && <span className="text-[10px] text-gray-500 dark:text-gray-400">· {message.model}</span>}
-          <button onClick={copyText} className="ml-auto hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100">
+          {message.durationMs !== undefined && <span className="text-[10px] text-gray-500 dark:text-gray-400">· {(message.durationMs / 1000).toFixed(1)}s</span>}
+          {message.stopped && <span className="rounded-full bg-amber-500/10 px-1.5 py-0.5 text-[9px] font-semibold text-amber-600">Stopped</span>}
+          <button aria-label="Copy AI response" title="Copy" onClick={copyText} className="ml-auto flex h-5 w-5 items-center justify-center rounded text-gray-500 opacity-70 hover:text-gray-900 hover:opacity-100 dark:text-gray-400 dark:hover:text-gray-100">
             {copied ? <CheckCircle2 className="h-3 w-3 text-emerald-500" /> : <Copy className="h-3 w-3" />}
           </button>
-          <button onClick={onRetry} className="hidden group-hover:flex h-5 w-5 items-center justify-center rounded text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:text-gray-100">
+          <button aria-label="Helpful response" title="Helpful" onClick={() => setFeedback(feedback === 'up' ? null : 'up')} className={`flex h-5 w-5 items-center justify-center rounded ${feedback === 'up' ? 'text-emerald-500' : 'text-gray-500 opacity-70 hover:text-gray-900 hover:opacity-100 dark:text-gray-400 dark:hover:text-gray-100'}`}>
+            <ThumbsUp className="h-3 w-3" />
+          </button>
+          <button aria-label="Unhelpful response" title="Needs improvement" onClick={() => setFeedback(feedback === 'down' ? null : 'down')} className={`flex h-5 w-5 items-center justify-center rounded ${feedback === 'down' ? 'text-red-500' : 'text-gray-500 opacity-70 hover:text-gray-900 hover:opacity-100 dark:text-gray-400 dark:hover:text-gray-100'}`}>
+            <ThumbsDown className="h-3 w-3" />
+          </button>
+          <button aria-label="Regenerate response" title="Regenerate" onClick={onRetry} className="flex h-5 w-5 items-center justify-center rounded text-gray-500 opacity-70 hover:text-gray-900 hover:opacity-100 dark:text-gray-400 dark:hover:text-gray-100">
             <RefreshCw className="h-3 w-3" />
           </button>
         </div>
@@ -621,11 +700,11 @@ function Composer({ value, setValue, onSubmit, onStop, loading, disabled, authLo
         </div>
 
         {loading ? (
-          <button type="button" onClick={onStop} className="shrink-0 flex h-11 w-11 items-center justify-center rounded-2xl bg-red-500 text-white hover:bg-red-600 transition-colors shadow-sm">
+          <button type="button" aria-label="Stop generating" title="Stop generating" onClick={onStop} className="shrink-0 flex h-11 w-11 items-center justify-center rounded-2xl bg-red-500 text-white hover:bg-red-600 transition-colors shadow-sm">
             <Square className="h-4 w-4 fill-white" />
           </button>
         ) : (
-          <button type="submit" disabled={!value.trim() || disabled} className="shrink-0 flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
+          <button type="submit" aria-label="Send message" title="Send message" disabled={!value.trim() || disabled} className="shrink-0 flex h-11 w-11 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-500 to-indigo-600 text-white shadow-sm hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed transition-opacity">
             <Send className="h-4 w-4" />
           </button>
         )}

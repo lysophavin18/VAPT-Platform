@@ -81,9 +81,22 @@ class RoleChecker:
     def __init__(self, role: str):
         self.role = role
         self.hierarchy = {"admin": 4, "manager": 3, "security_team": 3, "analyst": 2, "viewer": 1}
+        self.aliases = {
+            "platform_administrator": "admin",
+            "platform_admin": "admin",
+            "project_owner": "manager",
+            "approver": "manager",
+            "lead_tester": "analyst",
+            "tester": "analyst",
+            "developer": "analyst",
+            "qa_tester": "analyst",
+            "reviewer": "analyst",
+            "client_viewer": "viewer",
+        }
 
     async def __call__(self, current_user: User = Depends(require_user)) -> User:
-        user_level = self.hierarchy.get(current_user.role, 0)
+        user_role = self.aliases.get(current_user.role, current_user.role)
+        user_level = self.hierarchy.get(user_role, 0)
         required_level = self.hierarchy.get(self.role, 0)
         if user_level < required_level:
             raise HTTPException(

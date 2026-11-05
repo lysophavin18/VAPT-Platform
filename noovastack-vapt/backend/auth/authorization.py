@@ -5,9 +5,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from database.models import Asset, Engagement, Finding, Project, Scan, ScanSchedule, User
 
 
+GLOBAL_PROJECT_ROLES = {"admin", "platform_admin", "platform_administrator"}
+
+
 def has_global_project_access(user: User) -> bool:
     # The existing System Administrator role is the platform superadmin.
-    return user.role == "admin"
+    return user.role in GLOBAL_PROJECT_ROLES
 
 
 def project_access_clause(user: User):

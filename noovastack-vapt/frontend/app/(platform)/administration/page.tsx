@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { CheckCircle, Database, FileText, Lock, Plus, Settings, ShieldCheck, SlidersHorizontal, Users, X, XCircle } from 'lucide-react';
+import { AlertTriangle, Bot, CheckCircle, Database, FileText, Lock, Plus, RefreshCw, Settings, ShieldCheck, SlidersHorizontal, Users, X, XCircle } from 'lucide-react';
 import { toast } from 'sonner';
 import { PageHeader } from '@/components/layout/page-header';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
@@ -11,7 +11,7 @@ import { StatusBadge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Field, Input, Select } from '@/components/ui/input';
 import { useAuth } from '@/hooks/use-auth';
-import { api, type AdminSettings } from '@/lib/api-client';
+import { api, type AdminSettings, type TelegramIntegration } from '@/lib/api-client';
 import { canAccess } from '@/lib/permissions';
 import type { Approval, Asset, ScanProfile, User } from '@/types';
 
@@ -33,7 +33,25 @@ const roleDescriptions: Record<string, string> = {
   analyst:       'Submit scan requests and tickets; admins review and run them.',
   viewer:        'Read-only access — can view findings and reports, nothing more.',
 };
-const adminSections = ['Tool Policies', 'Safety Policies', 'Report Templates', 'Platform Settings'];
+const adminSections = ['Tool Policies', 'Safety Policies', 'Report Templates', 'Platform Settings', 'Telegram Notifications'];
+const telegramCategories = [
+  ['projects', 'Projects'],
+  ['scans', 'Scans & schedules'],
+  ['findings', 'Findings & retests'],
+  ['patches', 'Patch management'],
+  ['mitigations', 'Mitigation management'],
+  ['approvals', 'Approval decisions'],
+  ['reports', 'Report activity'],
+  ['assets', 'Assets & discovery'],
+  ['system', 'Administration & system'],
+] as const;
+const telegramFindingSeverities = [
+  ['critical', 'Critical'],
+  ['high', 'High'],
+  ['medium', 'Medium'],
+  ['low', 'Low'],
+  ['informational', 'Informational'],
+] as const;
 
 type UserProfileDraft = Pick<User, 'email' | 'username' | 'full_name' | 'role'> & { is_active: boolean };
 
@@ -43,9 +61,11 @@ export default function AdministrationPage() {
   const [hiddenCards, setHiddenCards] = useState<string[]>([]);
   const [draftSettings, setDraftSettings] = useState<AdminSettings | null>(null);
   const [selectedUserId, setSelectedUserId] = useState<string | null>(null);
+  const [cveSyncJobId, setCveSyncJobId] = useState<string | null>(null);
   const [draftUser, setDraftUser] = useState<UserProfileDraft | null>(null);
   const [showCreateUser, setShowCreateUser] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', email: '', full_name: '', password: '', role: 'analyst' });
+  const [telegramDraft, setTelegramDraft] = useState({ enabled: false, bot_token: '', chat_id: '', event_categories: [] as string[], finding_severities: ['critical', 'high'] as string[] });
 
   const createUserMutation = useMutation({
     mutationFn: (payload: typeof newUser) => api.createUser(payload, token),
@@ -88,11 +108,38 @@ export default function AdministrationPage() {
   const profiles = useQuery({ queryKey: ['scan-profiles'], queryFn: () => api.scanProfiles(token), enabled: Boolean(token) });
   const settings = useQuery({ queryKey: ['admin-settings'], queryFn: () => api.adminSettings(token), enabled: Boolean(token) });
   const scannerTools = useQuery({ queryKey: ['scanner-tools'], queryFn: () => api.scannerTools(token), enabled: Boolean(token) });
-  const cveStatus = useQuery({ queryKey: ['cve-sync-status'], queryFn: () => api.cveSyncStatus(token), enabled: Boolean(token) });
+  const telegram = useQuery({ queryKey: ['telegram-integration'], queryFn: () => api.telegramIntegration(token), enabled: Boolean(token && currentUser?.role === 'admin') });
+  const scannerToolsHealth = useQuery({
+    queryKey: ['scanner-tools-health'],
+    queryFn: () => api.scannerToolsHealth(token),
+    enabled: Boolean(token && currentUser?.role === 'admin'),
+    refetchInterval: 30_000,
+  });
+  const cveStatus = useQuery({ queryKey: ['cve-sync-status'], queryFn: () => api.cveSyncStatus(token), enabled: Boolean(token), refetchInterval: cveSyncJobId ? 3_000 : 60_000 });
+  const cveSyncJob = useQuery({
+    queryKey: ['cve-sync-job', cveSyncJobId],
+    queryFn: () => api.cveSyncJob(cveSyncJobId!, token),
+    enabled: Boolean(token && cveSyncJobId),
+    refetchInterval: (query) => query.state.data?.ready ? false : 2_000,
+  });
+
+  useEffect(() => {
+    const job = cveSyncJob.data;
+    if (!job?.ready || !cveSyncJobId) return;
+    void queryClient.invalidateQueries({ queryKey: ['cve-sync-status'] });
+    if (job.result?.status === 'success') toast.success(`CVE database synced: ${job.result.records_synced ?? 0} records`);
+    else toast.error(job.result?.error ?? 'CVE synchronization failed');
+    setCveSyncJobId(null);
+  }, [cveSyncJob.data, cveSyncJobId, queryClient]);
 
   useEffect(() => {
     if (settings.data) setDraftSettings(settings.data);
   }, [settings.data]);
+
+  useEffect(() => {
+    if (!telegram.data) return;
+    setTelegramDraft({ enabled: telegram.data.enabled, bot_token: '', chat_id: telegram.data.chat_id, event_categories: telegram.data.event_categories, finding_severities: telegram.data.finding_severities });
+  }, [telegram.data]);
 
   useEffect(() => {
     const selected = users.data?.find((user) => user.id === selectedUserId) ?? users.data?.[0];
@@ -124,6 +171,22 @@ export default function AdministrationPage() {
       toast.success('Administration settings saved');
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'Unable to save settings'),
+  });
+
+  const telegramMutation = useMutation({
+    mutationFn: (payload: typeof telegramDraft) => api.updateTelegramIntegration(payload, token),
+    onSuccess: async (saved: TelegramIntegration) => {
+      setTelegramDraft({ enabled: saved.enabled, bot_token: '', chat_id: saved.chat_id, event_categories: saved.event_categories, finding_severities: saved.finding_severities });
+      await queryClient.invalidateQueries({ queryKey: ['telegram-integration'] });
+      toast.success('Telegram notification settings saved');
+    },
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Unable to save Telegram settings'),
+  });
+
+  const telegramTestMutation = useMutation({
+    mutationFn: () => api.testTelegramIntegration(token),
+    onSuccess: (result) => toast.success(`Test message sent${result.bot_username ? ` via @${result.bot_username}` : ''}`),
+    onError: (error) => toast.error(error instanceof Error ? error.message : 'Telegram test failed'),
   });
 
   const userProfileMutation = useMutation({
@@ -168,9 +231,9 @@ export default function AdministrationPage() {
 
   const cveSyncMutation = useMutation({
     mutationFn: () => api.syncCveDatabase(token),
-    onSuccess: async (result) => {
-      await queryClient.invalidateQueries({ queryKey: ['cve-sync-status'] });
-      toast.success(`CVE database synced: ${result.records_synced} records`);
+    onSuccess: (result) => {
+      setCveSyncJobId(result.job_id);
+      toast.success('CVE synchronization queued');
     },
     onError: (error) => toast.error(error instanceof Error ? error.message : 'CVE sync failed'),
   });
@@ -210,7 +273,7 @@ export default function AdministrationPage() {
             <span className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-600">
               {currentUser?.role === 'admin' ? 'System Administrator' : currentUser?.role === 'manager' ? 'Manager' : 'Security Team'}
             </span>
-            <Button variant="outline" onClick={() => { users.refetch(); profiles.refetch(); settings.refetch(); approvals.refetch(); pendingAssetsQuery.refetch(); }}>Refresh</Button>
+            <Button variant="outline" onClick={() => { users.refetch(); profiles.refetch(); settings.refetch(); approvals.refetch(); pendingAssetsQuery.refetch(); scannerToolsHealth.refetch(); }}>Refresh</Button>
           </div>
         }
       />
@@ -374,12 +437,35 @@ export default function AdministrationPage() {
           <Field label="Max parallel scans"><Input type="number" min={1} value={draftSettings.tool_policies.max_parallel_scans} onChange={(event) => updateSection('tool_policies', 'max_parallel_scans', Number(event.target.value))} /></Field>
           <Field label="Request timeout seconds"><Input type="number" min={5} value={draftSettings.tool_policies.request_timeout_seconds} onChange={(event) => updateSection('tool_policies', 'request_timeout_seconds', Number(event.target.value))} /></Field>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex items-center justify-between gap-3"><div><p className="font-semibold text-[#0B1F3A]">Scanner Tool Catalog</p><p className="text-xs text-slate-500">{scannerTools.data?.length ?? 0} registered vulnerability tools</p></div><StatusBadge value="active" /></div>
-            <div className="mt-3 flex flex-wrap gap-2">{(scannerTools.data ?? []).slice(0, 10).map((tool) => <span key={tool.id} className="rounded-full border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700">{tool.name}</span>)}</div>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="font-semibold text-[#0B1F3A]">Scanner Worker &amp; Tool Health</p>
+                <p className="mt-1 text-xs text-slate-500">Live availability from the worker that executes scans. Refreshes every 30 seconds.</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <StatusBadge value={scannerToolsHealth.data?.worker_status ?? (scannerToolsHealth.isLoading ? 'checking' : 'offline')} />
+                <Button variant="outline" disabled={scannerToolsHealth.isFetching} onClick={() => scannerToolsHealth.refetch()}>
+                  <RefreshCw className={`h-4 w-4 ${scannerToolsHealth.isFetching ? 'animate-spin' : ''}`} /> Refresh
+                </Button>
+              </div>
+            </div>
+            <div className="mt-3 grid grid-cols-3 gap-2 text-center text-xs">
+              <ToolHealthMetric label="Registered" value={scannerToolsHealth.data?.total ?? scannerTools.data?.length ?? 0} />
+              <ToolHealthMetric label="Ready" value={scannerToolsHealth.data?.available ?? 0} tone="ready" />
+              <ToolHealthMetric label="Missing" value={scannerToolsHealth.data?.missing ?? 0} tone={scannerToolsHealth.data?.missing ? 'missing' : 'neutral'} />
+            </div>
+            {scannerToolsHealth.data?.worker_status === 'offline' ? <div className="mt-3 flex gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800"><AlertTriangle className="h-4 w-4 shrink-0" />The scan worker did not answer. Tool availability cannot be confirmed until it is online.</div> : null}
+            <div className="mt-3 max-h-80 space-y-2 overflow-y-auto pr-1">
+              {(scannerToolsHealth.data?.tools ?? []).map((tool) => <div key={tool.id} className="flex items-start justify-between gap-3 rounded-lg border border-slate-200 bg-white p-3">
+                <div className="min-w-0"><p className="text-sm font-semibold text-[#0B1F3A]">{tool.name}</p><p className="text-xs text-slate-500">{tool.category} · {tool.purpose}</p>{tool.runtime_requirement ? <p className="mt-1 text-xs text-amber-700">Runtime: {tool.runtime_requirement}</p> : null}</div>
+                <StatusBadge value={tool.status} />
+              </div>)}
+            </div>
+            {scannerToolsHealth.data?.checked_at ? <p className="mt-3 text-xs text-slate-500">Last checked: {new Date(scannerToolsHealth.data.checked_at).toLocaleString()}</p> : null}
           </div>
           <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <div className="flex items-start justify-between gap-3"><div><p className="flex items-center gap-2 font-semibold text-[#0B1F3A]"><Database className="h-4 w-4 text-[#155EEF]" /> CVE Database Sync</p><p className="mt-1 text-xs text-slate-500">{cveStatus.data?.total_records ?? 0} CVE records. Last success: {cveStatus.data?.last_success_at ?? 'Never'}</p>{cveStatus.data?.error ? <p className="mt-1 text-xs text-red-600">{cveStatus.data.error}</p> : null}</div><StatusBadge value={cveStatus.data?.status ?? 'unknown'} /></div>
-            <Button className="mt-3 w-full" variant="secondary" disabled={cveSyncMutation.isPending} onClick={() => cveSyncMutation.mutate()}>{cveSyncMutation.isPending ? 'Syncing CVEs...' : 'Sync CVE Database'}</Button>
+            <div className="flex items-start justify-between gap-3"><div><p className="flex items-center gap-2 font-semibold text-[#0B1F3A]"><Database className="h-4 w-4 text-[#155EEF]" /> CVE Database Sync</p><p className="mt-1 text-xs text-slate-500">{cveStatus.data?.total_records ?? 0} CVE records. Last success: {cveStatus.data?.last_success_at ? new Date(cveStatus.data.last_success_at).toLocaleString() : 'Never'}</p>{cveStatus.data?.is_stale ? <p className="mt-1 text-xs text-amber-700">CVE intelligence is stale.</p> : null}{cveStatus.data?.error ? <p className="mt-1 text-xs text-red-600">{cveStatus.data.error}</p> : null}</div><StatusBadge value={cveSyncJobId ? 'running' : cveStatus.data?.status ?? 'unknown'} /></div>
+            <Button className="mt-3 w-full" variant="secondary" disabled={cveSyncMutation.isPending || Boolean(cveSyncJobId) || cveStatus.data?.status === 'running'} onClick={() => cveSyncMutation.mutate()}>{cveSyncJobId ? 'Syncing CVEs...' : cveSyncMutation.isPending ? 'Queueing sync...' : 'Sync CVE Database'}</Button>
           </div>
         </FeatureCard> : null}
 
@@ -401,6 +487,38 @@ export default function AdministrationPage() {
           <Field label="Default environment"><Select value={draftSettings.platform_settings.default_environment} onChange={(event) => updateSection('platform_settings', 'default_environment', event.target.value)}><option value="testing">Testing</option><option value="staging">Staging</option><option value="production">Production</option></Select></Field>
           <Field label="Notification retention days"><Input type="number" min={1} value={draftSettings.platform_settings.notification_retention_days} onChange={(event) => updateSection('platform_settings', 'notification_retention_days', Number(event.target.value))} /></Field>
           <Field label="Session timeout minutes"><Input type="number" min={5} value={draftSettings.platform_settings.session_timeout_minutes} onChange={(event) => updateSection('platform_settings', 'session_timeout_minutes', Number(event.target.value))} /></Field>
+        </FeatureCard> : null}
+
+        {visibleSections.includes('Telegram Notifications') ? <FeatureCard title="Telegram Notifications" icon={<Bot className="h-5 w-5 text-[#229ED9]" />} onClose={() => setHiddenCards((current) => [...current, 'Telegram Notifications'])}>
+          <div className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-slate-50 p-3 dark:border-[#2A394D] dark:bg-[#101927]">
+            <div><p className="font-semibold text-[#0B1F3A] dark:text-slate-100">Activity alerts</p><p className="mt-1 text-xs text-slate-500">Send selected platform activity to a Telegram chat every 30 seconds.</p></div>
+            <StatusBadge value={telegramDraft.enabled ? 'active' : telegram.data?.configured ? 'configured' : 'not configured'} />
+          </div>
+          <Toggle label="Enable Telegram notifications" checked={telegramDraft.enabled} onChange={(enabled) => setTelegramDraft((current) => ({ ...current, enabled }))} />
+          <Field label="Bot token">
+            <Input type="password" autoComplete="new-password" value={telegramDraft.bot_token} onChange={(event) => setTelegramDraft((current) => ({ ...current, bot_token: event.target.value }))} placeholder={telegram.data?.configured ? 'Token saved — enter a new token to replace it' : 'Paste token from @BotFather'} />
+            <p className="mt-1 text-xs text-slate-500">Encrypted on the server and never returned to the browser.</p>
+          </Field>
+          <Field label="Chat ID or channel username">
+            <Input value={telegramDraft.chat_id} onChange={(event) => setTelegramDraft((current) => ({ ...current, chat_id: event.target.value }))} placeholder="-1001234567890 or @security_alerts" />
+          </Field>
+          <div>
+            <p className="mb-2 text-sm font-medium text-[#102033] dark:text-slate-100">Activity categories</p>
+            <div className="grid gap-2 sm:grid-cols-2">
+              {telegramCategories.map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-[#2A394D] dark:bg-[#131E2D]"><input type="checkbox" checked={telegramDraft.event_categories.includes(value)} onChange={(event) => setTelegramDraft((current) => ({ ...current, event_categories: event.target.checked ? [...current.event_categories, value] : current.event_categories.filter((item) => item !== value) }))} /><span>{label}</span></label>)}
+            </div>
+          </div>
+          <div>
+            <p className="mb-2 text-sm font-medium text-[#102033] dark:text-slate-100">Finding severities for triage alerts</p>
+            <div className="grid gap-2 sm:grid-cols-3">
+              {telegramFindingSeverities.map(([value, label]) => <label key={value} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm dark:border-[#2A394D] dark:bg-[#131E2D]"><input type="checkbox" checked={telegramDraft.finding_severities.includes(value)} onChange={(event) => setTelegramDraft((current) => ({ ...current, finding_severities: event.target.checked ? [...current.finding_severities, value] : current.finding_severities.filter((item) => item !== value) }))} /><span>{label}</span></label>)}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={() => telegramMutation.mutate(telegramDraft)} disabled={telegramMutation.isPending || !telegramDraft.chat_id.trim() || !telegramDraft.event_categories.length || !telegramDraft.finding_severities.length}>{telegramMutation.isPending ? 'Saving...' : 'Save Telegram'}</Button>
+            <Button variant="outline" onClick={() => telegramTestMutation.mutate()} disabled={telegramTestMutation.isPending || !telegram.data?.configured || !telegram.data?.chat_id}>{telegramTestMutation.isPending ? 'Sending...' : 'Send Test Message'}</Button>
+          </div>
+          <p className="text-xs text-slate-500">Create a bot with @BotFather, add it to the target group or channel, then save and send a test message.</p>
         </FeatureCard> : null}
       </div> : null}
 
@@ -469,6 +587,11 @@ export default function AdministrationPage() {
 
 function SummaryCard({ label, value, highlight = false }: { label: string; value: string; highlight?: boolean }) {
   return <Card className={`p-4 ${highlight ? 'border-amber-300 bg-amber-50' : ''}`}><p className="text-sm text-slate-600">{label}</p><p className={`mt-2 text-3xl font-bold ${highlight ? 'text-amber-700' : 'text-[#0B1F3A]'}`}>{value}</p></Card>;
+}
+
+function ToolHealthMetric({ label, value, tone = 'neutral' }: { label: string; value: number; tone?: 'neutral' | 'ready' | 'missing' }) {
+  const toneClass = tone === 'ready' ? 'border-green-200 bg-green-50 text-green-700' : tone === 'missing' ? 'border-red-200 bg-red-50 text-red-700' : 'border-slate-200 bg-white text-[#0B1F3A]';
+  return <div className={`rounded-lg border p-2 ${toneClass}`}><p className="text-lg font-bold">{value}</p><p className="text-[11px] font-medium">{label}</p></div>;
 }
 
 function FeatureCard({ title, icon, onClose, children }: { title: string; icon: React.ReactNode; onClose: () => void; children: React.ReactNode }) {

@@ -42,10 +42,15 @@ class Settings(BaseSettings):
     SCAN_TIMEOUT: int = 3600
     RESULTS_DIR: str = "/app/results"
 
-    AI_PROVIDER: str = os.getenv("AI_PROVIDER", "deepseek")
-    AI_BASE_URL: str = os.getenv("AI_BASE_URL", "https://api.deepseek.com")
+    NVD_API_KEY: str = os.getenv("NVD_API_KEY", "")
+    CVE_HTTP_TIMEOUT_SECONDS: int = int(os.getenv("CVE_HTTP_TIMEOUT_SECONDS", "45"))
+    CVE_STALE_AFTER_HOURS: int = int(os.getenv("CVE_STALE_AFTER_HOURS", "4"))
+    NVD_REQUEST_DELAY_SECONDS: float = float(os.getenv("NVD_REQUEST_DELAY_SECONDS", "6"))
+
+    AI_PROVIDER: str = os.getenv("AI_PROVIDER", "noovastack-local")
+    AI_BASE_URL: str = os.getenv("AI_BASE_URL", "https://chat.noovastack.com/api")
     AI_API_KEY: str = os.getenv("AI_API_KEY", "")
-    AI_MODEL: str = os.getenv("AI_MODEL", "deepseek-chat")
+    AI_MODEL: str = os.getenv("AI_MODEL", "qwen3.6-coder:35b-32k")
     AI_TIMEOUT_SECONDS: int = int(os.getenv("AI_TIMEOUT_SECONDS", "240"))
     AI_MAX_OUTPUT_TOKENS: int = int(os.getenv("AI_MAX_OUTPUT_TOKENS", "4096"))
     AI_TEMPERATURE: float = float(os.getenv("AI_TEMPERATURE", "0.2"))

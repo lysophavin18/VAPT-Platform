@@ -1,9 +1,9 @@
 model:
   name: noovastack-pentester-agent
   version: 0.1.0
-  base_model: qwen3-coder:30b-64k
-  provider: ollama
-  base_url: http://192.168.220.204:11434/v1
+  base_model: qwen3.6-coder:35b-32k
+  provider: noovastack-local
+  base_url: https://chat.noovastack.com/api
   dataset_version: vapt-agent-data-2026-01
   training_method: prompt_rag_tools_eval_baseline
   adapter_version: none

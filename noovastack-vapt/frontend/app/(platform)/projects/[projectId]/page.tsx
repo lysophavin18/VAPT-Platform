@@ -20,6 +20,7 @@ import { useScans } from '@/hooks/use-scans';
 import { api } from '@/lib/api-client';
 import { useAuth } from '@/hooks/use-auth';
 import { formatDate, titleCase } from '@/lib/utils';
+import { normalizeRole } from '@/lib/permissions';
 import type { Asset, Scan } from '@/types';
 
 export default function ProjectDetailPage() {
@@ -33,7 +34,7 @@ export default function ProjectDetailPage() {
   const deleteProject = useDeleteProject();
   const assets = useAssets(projectId);
   const scans = useScans(`?project_id=${projectId}`);
-  const isManager = user?.role && ['admin', 'manager', 'security_team'].includes(user.role);
+  const isManager = ['admin', 'manager', 'security_team'].includes(normalizeRole(user?.role));
 
   const approveAsset = useMutation({
     mutationFn: (assetId: string) => api.approveAsset(assetId, token),
@@ -66,21 +67,29 @@ export default function ProjectDetailPage() {
       toast.error('Project name is required');
       return;
     }
-    await updateProject.mutateAsync({
-      name: form.name.trim(),
-      description: form.description.trim() || null,
-      environment: form.environment,
-      status: form.status,
-    });
-    toast.success('Project updated');
-    setEditing(false);
+    try {
+      await updateProject.mutateAsync({
+        name: form.name.trim(),
+        description: form.description.trim() || null,
+        environment: form.environment,
+        status: form.status,
+      });
+      toast.success('Project updated');
+      setEditing(false);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to update project');
+    }
   }
 
   async function removeProject() {
     if (!project.data) return;
-    await deleteProject.mutateAsync(projectId);
-    toast.success('Project deleted');
-    router.push('/projects');
+    try {
+      await deleteProject.mutateAsync(projectId);
+      toast.success('Project deleted');
+      router.push('/projects');
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : 'Unable to delete project');
+    }
   }
 
   if (project.isLoading) return <LoadingSkeleton rows={8} />;
@@ -93,8 +102,8 @@ export default function ProjectDetailPage() {
         breadcrumbs={[{ href: '/projects', label: 'Projects' }, { label: project.data?.name ?? 'Project' }]}
         actions={(
           <>
-            <Button variant="outline" onClick={() => setEditing((value) => !value)}><Edit3 className="h-4 w-4" /> {editing ? 'Close Edit' : 'Edit'}</Button>
-            <ConfirmationDialog title="Delete project?" description={`This permanently deletes ${project.data?.name ?? 'this project'} and its related engagements, assets, scans, and findings. The action will be recorded in audit logs with your user account.`} confirmLabel={deleteProject.isPending ? 'Deleting...' : 'Delete Project'} requireText="DELETE" danger onConfirm={removeProject} />
+            {isManager ? <Button variant="outline" onClick={() => setEditing((value) => !value)}><Edit3 className="h-4 w-4" /> {editing ? 'Close Edit' : 'Edit'}</Button> : null}
+            {isManager ? <ConfirmationDialog title="Delete project?" description={`This permanently deletes ${project.data?.name ?? 'this project'} and its related engagements, assets, scans, and findings. The action will be recorded in audit logs with your user account.`} confirmLabel={deleteProject.isPending ? 'Deleting...' : 'Delete Project'} requireText="DELETE" danger onConfirm={removeProject} /> : null}
             <Link href={`/assets/discovery?project=${projectId}`}><Button variant="outline"><Network className="h-4 w-4" /> Discover Assets</Button></Link>
             <Link href={`/scans/new?project=${projectId}`}><Button><Plus className="h-4 w-4" /> New Scan</Button></Link>
             <Link href="/reports"><Button variant="outline"><FileText className="h-4 w-4" /> Reports</Button></Link>
@@ -102,7 +111,7 @@ export default function ProjectDetailPage() {
         )}
       />
 
-      {editing ? (
+      {editing && isManager ? (
         <Card className="mb-6">
           <CardHeader><h2 className="font-semibold">Edit Project</h2></CardHeader>
           <CardContent>

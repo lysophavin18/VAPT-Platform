@@ -1,10 +1,10 @@
 # NoovaStack Local AI Agent Program
 
-This package defines Phase 1 controls for adapting `qwen3-coder:30b-64k` inside NoovaStack VAPT without fine-tuning first.
+This package defines Phase 1 controls for adapting `qwen3.6-coder:35b-32k` inside NoovaStack VAPT without fine-tuning first.
 
 ## Operating Model
 
-- Use one local model: `qwen3-coder:30b-64k`.
+- Use one local model: `qwen3.6-coder:35b-32k`.
 - Specialize agents with prompts, schemas, RAG filters, tool permissions, and evaluations.
 - Keep execution, approval, redaction, scope, and audit controls outside the model.
 - Fine-tuning is Phase 2 only after prompts, RAG, tools, and evaluations are stable.

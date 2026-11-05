@@ -85,7 +85,7 @@ async def create_scan(
         actor_id=current_user.id,
         event_type="scan",
         action="create_scan",
-        details={"status": scan.status},
+        details={"scan_name": scan.name, "status": scan.status, "actor_email": current_user.email},
     ))
     db.add(ScanSafetyState(scan_id=scan.id))
     db.add(ScanEvent(scan_id=scan.id, event_type="scan_created", severity="info", summary="Scan request created and recorded.", details_json={"created_by": str(current_user.id)}))
@@ -248,7 +248,7 @@ async def request_scan_approval(
         await db.flush()
     scan.status = "approved" if approval_is_valid(approval, now) else "pending_review"
     db.add(ScanEvent(scan_id=scan.id, event_type="approval_requested", severity="warning", summary="Scan launch review requested.", details_json={"approval_action": "scan_launch"}))
-    db.add(AuditLog(project_id=scan.project_id, scan_id=scan.id, actor_id=current_user.id, event_type="approval", action="scan_approval_requested", details={"risk_level": approval.risk_level}))
+    db.add(AuditLog(project_id=scan.project_id, scan_id=scan.id, actor_id=current_user.id, event_type="approval", action="scan_approval_requested", details={"scan_name": scan.name, "risk_level": approval.risk_level, "status": scan.status, "actor_email": current_user.email}))
     await db.commit()
     return {"status": "approved" if approval_is_valid(approval, now) else "requested", "approval_id": str(approval.id)}
 
@@ -295,6 +295,14 @@ async def start_scan(
     scan.status = "running"
     scan.started_at = datetime.utcnow()
     scan.celery_task_id = task.id
+    db.add(AuditLog(
+        project_id=scan.project_id,
+        scan_id=scan.id,
+        actor_id=current_user.id,
+        event_type="scan",
+        action="scan_started",
+        details={"scan_name": scan.name, "status": scan.status, "actor_email": current_user.email},
+    ))
     await db.commit()
     await db.refresh(scan)
     return scan

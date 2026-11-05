@@ -1,4 +1,4 @@
-model_under_test: qwen3-coder:30b-64k
+model_under_test: qwen3.6-coder:35b-32k
 frozen_dataset: evals/frozen_eval_set.jsonl
 split_strategy: by_project_or_engagement
 
