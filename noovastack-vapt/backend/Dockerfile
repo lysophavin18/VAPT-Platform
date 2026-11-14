@@ -22,7 +22,7 @@ FROM golang:alpine@sha256:d200d2dd76b03a99b52651fd1325aff7dcd35422c35c01bac56571
 # renovate: datasource=go depName=github.com/projectdiscovery/nuclei/v3
 ARG NUCLEI_VERSION=v3.11.1
 # renovate: datasource=go depName=github.com/projectdiscovery/subfinder/v2
-ARG SUBFINDER_VERSION=v2.16.0
+ARG SUBFINDER_VERSION=v2.17.0
 # renovate: datasource=go depName=github.com/projectdiscovery/httpx
 ARG HTTPX_VERSION=v1.12.0
 # renovate: datasource=go depName=github.com/projectdiscovery/dnsx
@@ -36,7 +36,7 @@ ARG GOBUSTER_VERSION=v3.8.2
 # renovate: datasource=go depName=github.com/hahwul/dalfox/v2
 ARG DALFOX_VERSION=v2.13.0
 # renovate: datasource=go depName=github.com/projectdiscovery/naabu/v2
-ARG NAABU_VERSION=v2.6.1
+ARG NAABU_VERSION=v2.7.0
 
 ENV GOBIN=/out CGO_ENABLED=0
 RUN apk add --no-cache ca-certificates git \
@@ -54,7 +54,7 @@ RUN apk add --no-cache libpcap-dev build-base \
 
 FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS trivy-dl
 # renovate: datasource=github-releases depName=aquasecurity/trivy
-ARG TRIVY_VERSION=0.75.0
+ARG TRIVY_VERSION=0.76.2
 RUN apk add --no-cache curl tar \
     && curl -fsSL "https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}/trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz" \
        | tar -xz -C /usr/local/bin trivy \
@@ -62,7 +62,7 @@ RUN apk add --no-cache curl tar \
 
 FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS grype-dl
 # renovate: datasource=github-releases depName=anchore/grype
-ARG GRYPE_VERSION=0.120.1
+ARG GRYPE_VERSION=0.121.3
 RUN apk add --no-cache curl tar \
     && curl -fsSL "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" \
        | tar -xz -C /usr/local/bin grype \
@@ -94,7 +94,7 @@ RUN git clone --depth 1 --branch ${NIKTO_VERSION} https://github.com/sullo/nikto
     && ln -s /opt/nikto/program/nikto.pl /usr/local/bin/nikto
 
 # renovate: datasource=github-releases depName=testssl/testssl.sh
-ARG TESTSSL_VERSION=v3.2.4
+ARG TESTSSL_VERSION=v3.2.5
 RUN git clone --depth 1 --branch ${TESTSSL_VERSION} https://github.com/testssl/testssl.sh.git /opt/testssl.sh \
     && ln -s /opt/testssl.sh/testssl.sh /usr/local/bin/testssl.sh \
     && ln -s /opt/testssl.sh/testssl.sh /usr/local/bin/testssl
@@ -108,13 +108,13 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # renovate: datasource=pypi depName=wapiti3
-ARG WAPITI_VERSION=3.2.4
+ARG WAPITI_VERSION=3.3.2
 RUN python -m venv /opt/wapiti \
     && /opt/wapiti/bin/pip install --no-cache-dir wapiti3==${WAPITI_VERSION} \
     && ln -s /opt/wapiti/bin/wapiti /usr/local/bin/wapiti
 
 # renovate: datasource=pypi depName=sqlmap
-ARG SQLMAP_VERSION=1.10.10
+ARG SQLMAP_VERSION=1.10.11
 RUN python -m venv /opt/sqlmap \
     && /opt/sqlmap/bin/pip install --no-cache-dir sqlmap==${SQLMAP_VERSION} \
     && ln -s /opt/sqlmap/bin/sqlmap /usr/local/bin/sqlmap
@@ -124,7 +124,7 @@ ARG BANDIT_VERSION=1.9.4
 # renovate: datasource=pypi depName=pip-audit
 ARG PIP_AUDIT_VERSION=2.10.1
 # renovate: datasource=pypi depName=semgrep
-ARG SEMGREP_VERSION=1.180.0
+ARG SEMGREP_VERSION=1.185.0
 RUN python -m venv /opt/security-tools \
     && /opt/security-tools/bin/pip install --no-cache-dir bandit==${BANDIT_VERSION} pip-audit==${PIP_AUDIT_VERSION} semgrep==${SEMGREP_VERSION} \
     && ln -s /opt/security-tools/bin/bandit  /usr/local/bin/bandit \
