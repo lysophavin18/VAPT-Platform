@@ -1,4 +1,4 @@
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS depx
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS depx
 
 # renovate: datasource=github-releases depName=projectdiscovery/depx
 ARG DEPX_VERSION=0.1.1
@@ -52,7 +52,7 @@ RUN apk add --no-cache ca-certificates git \
 RUN apk add --no-cache libpcap-dev build-base \
     && CGO_ENABLED=1 go install -ldflags '-extldflags "-static"' github.com/projectdiscovery/naabu/v2/cmd/naabu@${NAABU_VERSION}
 
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS trivy-dl
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS trivy-dl
 # renovate: datasource=github-releases depName=aquasecurity/trivy
 ARG TRIVY_VERSION=0.75.0
 RUN apk add --no-cache curl tar \
@@ -60,7 +60,7 @@ RUN apk add --no-cache curl tar \
        | tar -xz -C /usr/local/bin trivy \
     && chmod +x /usr/local/bin/trivy
 
-FROM alpine:3.24@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS grype-dl
+FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS grype-dl
 # renovate: datasource=github-releases depName=anchore/grype
 ARG GRYPE_VERSION=0.120.1
 RUN apk add --no-cache curl tar \
@@ -68,7 +68,7 @@ RUN apk add --no-cache curl tar \
        | tar -xz -C /usr/local/bin grype \
     && chmod +x /usr/local/bin/grype
 
-FROM python:3.12-slim@sha256:aa943ce411423c7582288f18707ff66eddcbaeb510502d747a72aeb34f30d159
+FROM python:3.12-slim@sha256:5e2bdb1b0d542d5039cffb8181c65930093949194a65c365dfb1b0fe13a4fa5b
 
 WORKDIR /app
 
