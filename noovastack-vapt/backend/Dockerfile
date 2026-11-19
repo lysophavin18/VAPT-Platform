@@ -62,7 +62,7 @@ RUN apk add --no-cache curl tar \
 
 FROM alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS grype-dl
 # renovate: datasource=github-releases depName=anchore/grype
-ARG GRYPE_VERSION=0.121.3
+ARG GRYPE_VERSION=0.122.1
 RUN apk add --no-cache curl tar \
     && curl -fsSL "https://github.com/anchore/grype/releases/download/v${GRYPE_VERSION}/grype_${GRYPE_VERSION}_linux_amd64.tar.gz" \
        | tar -xz -C /usr/local/bin grype \
@@ -124,7 +124,7 @@ ARG BANDIT_VERSION=1.9.4
 # renovate: datasource=pypi depName=pip-audit
 ARG PIP_AUDIT_VERSION=2.10.1
 # renovate: datasource=pypi depName=semgrep
-ARG SEMGREP_VERSION=1.185.0
+ARG SEMGREP_VERSION=1.186.0
 RUN python -m venv /opt/security-tools \
     && /opt/security-tools/bin/pip install --no-cache-dir bandit==${BANDIT_VERSION} pip-audit==${PIP_AUDIT_VERSION} semgrep==${SEMGREP_VERSION} \
     && ln -s /opt/security-tools/bin/bandit  /usr/local/bin/bandit \
